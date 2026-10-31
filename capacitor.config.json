@@ -1,0 +1,11 @@
+{
+  "appId": "com.hss.allinone",
+  "appName": "HSS ALL IN ONE",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "OneSignal": {
+      "appId": "e408c264-cc29-4f91-809f-1e5effc2b43d"
+    }
+  }
+}

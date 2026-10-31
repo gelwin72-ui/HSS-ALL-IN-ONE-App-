@@ -1,0 +1,12 @@
+{
+  "projectId": "hss-all-in-one",
+  "appId": "1:978993384932:web:8d841a6bb5e840f1910bf1",
+  "apiKey": "AIzaSyCs2H0N2c4kz9RvNOBlfTplxLGYMfnY6IU",
+  "authDomain": "hss-all-in-one.firebaseapp.com",
+  "databaseURL": "https://hss-all-in-one-default-rtdb.firebaseio.com",
+  "storageBucket": "hss-all-in-one.firebasestorage.app",
+  "messagingSenderId": "978993384932",
+  "measurementId": "G-D9YB67MYTY",
+  "oAuthClientId": "978993384932-hbiogrsgn0g1f6q8f34ofm9s392jicap.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}

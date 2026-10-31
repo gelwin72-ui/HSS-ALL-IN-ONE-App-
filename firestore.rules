@@ -1,0 +1,188 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return getUserDoc().data;
+    }
+
+    // Check if the current authenticated user is an active School Admin for the given schoolCode
+    function isSchoolAdmin(targetSchoolCode) {
+      return isSignedIn() &&
+             userExists() &&
+             (getUserData().role == 'SCHOOL_ADMIN' || getUserData().role == 'admin') &&
+             getUserData().active == true &&
+             (targetSchoolCode == '' || getUserData().schoolCode == targetSchoolCode);
+    }
+
+    // Check if the user belongs to the specified schoolCode
+    function isMemberOfSchool(targetSchoolCode) {
+      return isSignedIn() &&
+             userExists() &&
+             (getUserData().schoolCode == targetSchoolCode || isSchoolAdmin(targetSchoolCode));
+    }
+
+    // 1. Users Collection (Keyed by Firebase Authentication UID or email)
+    match /users/{userId} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 2. School-Specific Multi-Tenant Data (Isolated by schoolCode)
+    match /schools/{schoolCode} {
+      allow read: if isMemberOfSchool(schoolCode);
+      allow write: if isSchoolAdmin(schoolCode);
+
+      match /teachers/{teacherId} {
+        allow get, list: if isSignedIn() && (isOwner(teacherId) || isMemberOfSchool(schoolCode));
+        allow create: if isSignedIn() && (isOwner(teacherId) || isSchoolAdmin(schoolCode));
+        allow update: if isSignedIn() && (isOwner(teacherId) || isSchoolAdmin(schoolCode));
+        allow delete: if isSchoolAdmin(schoolCode);
+      }
+
+      match /activities/{activityId} {
+        allow get, list: if isMemberOfSchool(schoolCode);
+        allow create: if isSignedIn();
+        allow update, delete: if isSchoolAdmin(schoolCode);
+      }
+
+      match /classes/{classId} {
+        allow get, list: if isMemberOfSchool(schoolCode);
+        allow create: if isSignedIn() && (
+          isOwner(request.resource.data.teacherId) ||
+          isSchoolAdmin(schoolCode)
+        ) && request.resource.data.schoolCode == schoolCode;
+        allow update: if isSignedIn() && (
+          isOwner(resource.data.teacherId) ||
+          isSchoolAdmin(schoolCode)
+        );
+        allow delete: if isSignedIn() && (
+          isOwner(resource.data.teacherId) ||
+          isSchoolAdmin(schoolCode)
+        );
+
+        match /students/{studentId} {
+          allow get, list: if isMemberOfSchool(schoolCode);
+          allow create: if isSignedIn() && (
+            isSchoolAdmin(schoolCode) ||
+            isOwner(request.resource.data.teacherId)
+          );
+          allow update: if isSignedIn() && (
+            isSchoolAdmin(schoolCode) ||
+            isOwner(request.resource.data.teacherId) ||
+            isOwner(resource.data.teacherId)
+          );
+          allow delete: if isSignedIn() && (
+            isSchoolAdmin(schoolCode) ||
+            isOwner(resource.data.teacherId)
+          );
+        }
+      }
+
+      match /students/{studentId} {
+        allow get, list: if isMemberOfSchool(schoolCode);
+        allow create: if isSignedIn() && (
+          isSchoolAdmin(schoolCode) ||
+          isOwner(request.resource.data.teacherId)
+        );
+        allow update: if isSignedIn() && (
+          isSchoolAdmin(schoolCode) ||
+          isOwner(request.resource.data.teacherId) ||
+          isOwner(resource.data.teacherId)
+        );
+        allow delete: if isSignedIn() && (
+          isSchoolAdmin(schoolCode) ||
+          isOwner(resource.data.teacherId)
+        );
+      }
+
+      match /{allSubcollections=**} {
+        allow read: if isMemberOfSchool(schoolCode);
+        allow write: if isSchoolAdmin(schoolCode);
+      }
+    }
+
+    // 3. Principal Announcements & Broadcasts (Scoped by schoolCode)
+    match /broadcasts/{broadcastId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isSchoolAdmin(request.resource.data.schoolCode);
+      allow delete: if isSignedIn() && isSchoolAdmin(resource.data.schoolCode);
+    }
+
+    // 4. Multi-Device Email Accounts Sync
+    match /email_accounts/{emailKey} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 5. Cloud Saved Files & Backups
+    match /cloud_files/{fileId} {
+      allow read, write: if true;
+
+      match /{allSubcollections=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // 6. Test connection collection
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // 7. FCM Tokens (flat and nested paths)
+    match /fcm_tokens/{tokenId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSchoolAdmin(resource.data.schoolCode));
+      allow create, update: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isSchoolAdmin(resource.data.schoolCode));
+    }
+
+    match /fcm_tokens/{schoolCode}/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSchoolAdmin(schoolCode));
+      allow write: if isSignedIn() && request.auth.uid == userId;
+
+      match /{tokenId} {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isSchoolAdmin(schoolCode));
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // 8. Root School Admins & Notification Preferences
+    match /schoolAdmins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /notification_preferences/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}

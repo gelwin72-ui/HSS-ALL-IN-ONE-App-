@@ -1,0 +1,79 @@
+{
+  "rules": {
+    "schools": {
+      "$schoolCode": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "email_accounts": {
+      "$emailKey": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "broadcasts": {
+      "$broadcastId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "fcm_tokens": {
+      "$schoolCode": {
+        ".read": "auth != null",
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $uid",
+          "$tokenId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        }
+      }
+    },
+    "notification_preferences": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "unauthorizedAttempts": {
+      ".read": "auth != null",
+      ".write": "true"
+    },
+    "teacherSignups": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "teachers": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "schoolAdmins": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "gmail": {
+      "$safeKey": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "cloud_files": {
+      "$fileId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

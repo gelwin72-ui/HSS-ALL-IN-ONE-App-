@@ -1,11 +1,44 @@
-<div align="center">
+# HSS ALL IN ONE
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+The Complete Smart Assistant for Higher Secondary School Teachers — Manage students, attendance, exams, marks, progress analytics, and PDF reports.
 
-  <h1>Built with AI Studio</h2>
+## GitHub Pages Deployment
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+This project is configured for automated continuous deployment to **GitHub Pages** using GitHub Actions.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1. **GitHub Pages Source**: In your GitHub repository settings, navigate to **Settings** → **Pages** → **Build and deployment** → **Source**, and select **GitHub Actions**.
+2. **Repository**: `gelwin72-ui/HSS-ALL-IN-ONE`
+3. **Vite Base Path**: The application is configured with `base: '/HSS-ALL-IN-ONE/'` in `vite.config.ts`.
+4. **Build Command**: The automated workflow runs `npm run build`, generating the static bundle and SPA fallback into `dist/`.
+5. **Deployment Target**: The `dist` directory is uploaded as a Pages artifact and deployed directly to GitHub Pages.
+6. **Expected Live Website URL**:
+   ```
+   https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/
+   ```
 
-</div>
+### Important: Firebase Authentication with GitHub Pages
+
+If you use Google Sign-In with Firebase Authentication on your GitHub Pages deployment:
+1. Go to the [Firebase Console](https://console.firebase.google.com/).
+2. Select your project (`hss-all-in-one`).
+3. Navigate to **Authentication** → **Settings** → **Authorized domains**.
+4. Click **Add domain** and enter:
+   ```
+   gelwin72-ui.github.io
+   ```
+This authorizes Firebase Authentication popups and redirects from your GitHub Pages URL.
+
+---
+
+## Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start local development server
+npm run dev
+
+# Build for production
+npm run build
+```

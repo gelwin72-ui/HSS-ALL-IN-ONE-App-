@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "files": {
+      "title": "Cloud Saved Files & Backups",
+      "description": "JSON database backups, CSV exports, student documents, and app snapshots saved to Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "size": { "type": "number" },
+        "content": { "type": "string" },
+        "email": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "summary": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "fileName", "email", "content"]
+    },
+    "users": {
+      "title": "User Data & Role Authorization",
+      "description": "User profile with role-based access control (RBAC), schoolCode tenancy, and active status keyed by Firebase Authentication UID",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "active": { "type": "boolean" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "lastSyncedAt": { "type": "string" },
+        "appData": { "type": "object" }
+      },
+      "required": ["email", "role", "schoolCode", "active"]
+    },
+    "email_accounts": {
+      "title": "Email Account Multi-Device Sync",
+      "description": "Synchronized school, teacher, and administrator data keyed by user email across multiple devices",
+      "properties": {
+        "email": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "role": { "type": "string" },
+        "teacherAccount": { "type": "object" },
+        "adminAccount": { "type": "object" },
+        "lastSyncedAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "appData": { "type": "object" }
+      },
+      "required": ["email"]
+    },
+    "broadcasts": {
+      "title": "Principal Announcement Broadcasts",
+      "description": "Announcements broadcasted by the school administrator to all teachers under the same school code",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "senderName": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "priority": { "type": "string" },
+        "category": { "type": "string" },
+        "targetAudience": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "schoolCode", "senderName", "title", "message", "priority"]
+    },
+    "school_teachers": {
+      "title": "School Teachers Roster",
+      "description": "Teacher profile and assignment records associated with a specific School Code for the School Admin Panel",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "dob": { "type": "string" },
+        "phone": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "subject": { "type": "string" },
+        "primarySubject": { "type": "string" },
+        "standard": { "type": "string" },
+        "stream": { "type": "string" },
+        "section": { "type": "string" },
+        "assignedClass": { "type": "string" },
+        "designation": { "type": "string" },
+        "avatar": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastActiveAt": { "type": "string" },
+        "recentActivity": { "type": "string" },
+        "studentCount": { "type": "number" },
+        "attendanceCount": { "type": "number" },
+        "examCount": { "type": "number" }
+      },
+      "required": ["id", "name", "schoolCode"]
+    },
+    "school_activities": {
+      "title": "School Real-time Activities",
+      "description": "Live activity logs of teacher actions synchronized with the School Admin Panel",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "subject": { "type": "string" },
+        "assignedClass": { "type": "string" },
+        "activityType": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "schoolCode", "teacherName", "description", "timestamp"]
+    },
+    "school_classes": {
+      "title": "School Classes",
+      "description": "Classes created by teachers in the school, tagged with teacherId and schoolCode",
+      "properties": {
+        "id": { "type": "string" },
+        "className": { "type": "string" },
+        "standard": { "type": "string" },
+        "stream": { "type": "string" },
+        "section": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "classStrength": { "type": "number" },
+        "teacherId": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "className", "schoolCode"]
+    },
+    "school_students": {
+      "title": "School Students Roster",
+      "description": "Students enrolled in a specific class, tagged with classId, teacherId, and schoolCode",
+      "properties": {
+        "id": { "type": "string" },
+        "rollNo": { "type": "number" },
+        "name": { "type": "string" },
+        "gender": { "type": "string" },
+        "classId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "phone": { "type": "string" },
+        "guardianName": { "type": "string" },
+        "guardianPhone": { "type": "string" },
+        "dob": { "type": "string" },
+        "admissionNo": { "type": "string" }
+      },
+      "required": ["id", "rollNo", "name", "schoolCode"]
+    },
+    "cloud_files": {
+      "title": "Cloud Saved Files & Backups",
+      "description": "Database backup files, exported records, documents, and attachments stored in Firestore for a user Gmail and school",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "data": { "type": "string" },
+        "email": { "type": "string" },
+        "schoolCode": { "type": "string" },
+        "userId": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "fileName", "email", "data", "uploadedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profile and data keyed by Firebase Auth UID"
+    },
+    "/email_accounts/{emailKey}": {
+      "schema": "email_accounts",
+      "description": "Multi-device account and dataset keyed by normalized email"
+    },
+    "/cloud_files/{fileId}": {
+      "schema": "cloud_files",
+      "description": "Saved files, database snapshots, and exports stored in Firestore"
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": "broadcasts",
+      "description": "Notice board broadcast notices scoped by schoolCode"
+    },
+    "/schools/{schoolCode}/teachers/{teacherId}": {
+      "schema": "school_teachers",
+      "description": "Teacher profiles and assignments linked to the same schoolCode for admin view without email or password"
+    },
+    "/schools/{schoolCode}/classes/{classId}": {
+      "schema": "school_classes",
+      "description": "Classes created by teachers belonging to the school"
+    },
+    "/schools/{schoolCode}/classes/{classId}/students/{studentId}": {
+      "schema": "school_students",
+      "description": "Students belonging to a specific class in the school"
+    },
+    "/schools/{schoolCode}/students/{studentId}": {
+      "schema": "school_students",
+      "description": "Global school students registry scoped by schoolCode"
+    },
+    "/schools/{schoolCode}/activities/{activityId}": {
+      "schema": "school_activities",
+      "description": "Real-time activity log for teacher updates under a schoolCode"
+    }
+  }
+}

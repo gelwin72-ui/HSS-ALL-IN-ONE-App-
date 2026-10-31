@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/sitemap.xml
