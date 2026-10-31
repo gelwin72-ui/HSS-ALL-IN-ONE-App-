@@ -8,6 +8,7 @@ import {
   LogOut,
   ChevronDown,
   Check,
+  CheckCircle2,
   Plus,
   Layers,
   Cloud,
@@ -23,7 +24,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { SchoolProfile, ClassInfo, ClassItem, TeacherInfo, SynthesisReport, ConnectedDevice } from '../types';
-import { CloudSync, SyncStatus } from '../utils/cloudSync';
+import { CloudSync, SyncStatus, SaveState } from '../utils/cloudSync';
 import { auth } from '../utils/firebase';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -67,6 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
   const [classToDelete, setClassToDelete] = useState<ClassItem | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(CloudSync.getStatus());
+  const [saveState, setSaveState] = useState<SaveState>(CloudSync.getSaveState());
   const [lastSyncTime, setLastSyncTime] = useState<string | undefined>(CloudSync.getLastSyncedAt());
   const [activeSyncEmail, setActiveSyncEmail] = useState<string | undefined>(
     CloudSync.getActiveSyncEmail() || auth?.currentUser?.email || teacher?.email || undefined
@@ -79,15 +81,29 @@ export const Header: React.FC<HeaderProps> = ({
   const synthesisDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsub = CloudSync.addListener((status, lastSynced, email, report) => {
+    const unsub = CloudSync.addListener((status, lastSynced, email, report, currentSaveState) => {
       setSyncStatus(status);
       setLastSyncTime(lastSynced);
       setActiveSyncEmail(email || CloudSync.getActiveSyncEmail() || auth?.currentUser?.email || teacher?.email || undefined);
       if (report) {
         setSynthesisReport(report);
       }
+      if (currentSaveState) {
+        setSaveState(currentSaveState);
+      }
     });
-    return unsub;
+
+    const handleSaveStateEvent = (e: any) => {
+      if (e.detail?.state) {
+        setSaveState(e.detail.state);
+      }
+    };
+    window.addEventListener('hss:cloud-save-state', handleSaveStateEvent);
+
+    return () => {
+      unsub();
+      window.removeEventListener('hss:cloud-save-state', handleSaveStateEvent);
+    };
   }, [teacher?.email]);
 
   const toggleSynthesisPopover = () => {
@@ -289,13 +305,31 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={toggleSynthesisPopover}
-                className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#1A1C23] border border-[#2D3139] hover:border-emerald-500/40 text-xs transition shadow-sm cursor-pointer group"
-                title="Multi-Device Instant Data Synthesis. Click for details & device fleet."
+                className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs transition-all shadow-sm cursor-pointer group ${
+                  saveState === 'saved'
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30'
+                    : saveState === 'saving' || syncStatus === 'syncing' || isManualSyncing
+                    ? 'bg-purple-950/40 border-purple-500/50 text-purple-300'
+                    : saveState === 'offline'
+                    ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+                    : 'bg-[#1A1C23] border-[#2D3139] hover:border-emerald-500/40'
+                }`}
+                title="Instant Data Auto-Save & Cloud Synchronization. Click for fleet details."
               >
-                {syncStatus === 'syncing' || isManualSyncing ? (
+                {saveState === 'saving' || syncStatus === 'syncing' || isManualSyncing ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 text-purple-400 animate-spin" />
-                    <span className="hidden sm:inline text-[11px] font-bold text-purple-300">Synthesizing...</span>
+                    <span className="hidden sm:inline text-[11px] font-bold text-purple-300">Saving...</span>
+                  </>
+                ) : saveState === 'saved' ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-in zoom-in-75 duration-200" />
+                    <span className="hidden sm:inline text-[11px] font-bold text-emerald-300">✓ Saved to Cloud</span>
+                  </>
+                ) : saveState === 'offline' ? (
+                  <>
+                    <CloudOff className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline text-[11px] font-semibold text-amber-300">Offline (Saved locally)</span>
                   </>
                 ) : syncStatus === 'synced' || activeSyncEmail ? (
                   <>

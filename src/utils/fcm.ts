@@ -361,8 +361,18 @@ export async function sendSchoolNotification(params: {
   targetAudience?: string;
   deepLink?: string;
   targetUid?: string;
-}): Promise<{ success: boolean; sentCount?: number; failureCount?: number; message?: string; error?: string }> {
-  const { schoolCode, title, body, category = 'notices', targetAudience = 'All', deepLink, targetUid } = params;
+  imageUrl?: string;
+  iconUrl?: string;
+}): Promise<{
+  success: boolean;
+  sentCount?: number;
+  failureCount?: number;
+  onesignal?: { dispatched: boolean; id?: string; error?: string };
+  fcm?: { sentCount: number; failureCount: number };
+  message?: string;
+  error?: string;
+}> {
+  const { schoolCode, title, body, category = 'notices', targetAudience = 'All', deepLink, targetUid, imageUrl, iconUrl } = params;
 
   if (!title || !body) {
     return { success: false, error: 'Title and body are required' };
@@ -384,7 +394,7 @@ export async function sendSchoolNotification(params: {
       try {
         idToken = await auth.currentUser.getIdToken();
       } catch (tokenErr) {
-        console.warn('[FCM] Could not get Auth ID token:', tokenErr);
+        console.warn('[Notification] Could not get Auth ID token:', tokenErr);
       }
     }
 
@@ -402,14 +412,25 @@ export async function sendSchoolNotification(params: {
       category,
       targetAudience,
       url: deepLink || getAppBasePath(),
-      targetUid
+      targetUid,
+      imageUrl,
+      iconUrl
     };
 
-    const response = await fetch('/api/send-fcm', {
+    let response = await fetch('/api/send-notification', {
       method: 'POST',
       headers,
       body: JSON.stringify(payload)
-    });
+    }).catch(() => null);
+
+    // Fallback to legacy endpoint if /api/send-notification was not reachable
+    if (!response || !response.ok) {
+      response = await fetch('/api/send-fcm', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+    }
 
     if (!response.ok) {
       const errJson = await response.json().catch(() => ({}));
@@ -424,10 +445,12 @@ export async function sendSchoolNotification(params: {
       success: true,
       sentCount: data.sentCount || 0,
       failureCount: data.failureCount || 0,
+      onesignal: data.onesignal,
+      fcm: data.fcm,
       message: data.message || `Notification sent to ${data.sentCount || 0} devices.`
     };
   } catch (err: any) {
-    console.warn('[FCM] Error dispatching push notification to backend:', err);
+    console.warn('[Notification] Error dispatching push notification to backend:', err);
     return { success: false, error: err.message || 'Network error reaching notification server' };
   }
 }

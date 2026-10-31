@@ -24,6 +24,7 @@ import { ReminderModal } from './components/ReminderModal';
 import { AddClassModal } from './components/AddClassModal';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { InstallPromptBanner } from './components/InstallPromptBanner';
+import { AutoSaveIndicator } from './components/AutoSaveIndicator';
 
 import { auth, onAuthStateChanged, signOut } from './utils/firebase';
 import { CloudSync } from './utils/cloudSync';
@@ -1121,6 +1122,9 @@ export function App() {
 
       {/* 9. In-App PWA Install Prompt Banner */}
       <InstallPromptBanner />
+
+      {/* Real-Time Cloud Auto-Save Status Indicator */}
+      <AutoSaveIndicator />
 
       {/* 10. Toast Message Popups */}
       {toast && (

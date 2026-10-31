@@ -75,11 +75,22 @@ export interface UserCloudBundle {
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline' | 'quota-exceeded';
+export type SaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'error';
 
-export type SyncListener = (status: SyncStatus, lastSyncedAt?: string, userEmail?: string, report?: SynthesisReport | null) => void;
+export type SyncListener = (
+  status: SyncStatus,
+  lastSyncedAt?: string,
+  userEmail?: string,
+  report?: SynthesisReport | null,
+  saveState?: SaveState
+) => void;
 
 class CloudSyncManager {
   private currentStatus: SyncStatus = 'idle';
+  private saveState: SaveState = 'idle';
+  private savedResetTimer: any = null;
+  private retryTimer: any = null;
+  private retryAttempt: number = 0;
   private lastSyncedAt: string | undefined = undefined;
   private listeners: Set<SyncListener> = new Set();
   private debounceTimer: any = null;
@@ -118,6 +129,12 @@ class CloudSyncManager {
         this.lastSynthesisReport = JSON.parse(storedReport);
       }
     } catch {}
+
+    // Check for pending offline changes from previous session
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('hss_pending_offline_sync') === 'true') {
+      this.saveState = 'offline';
+      setTimeout(() => this.flushPendingOfflineSync(), 1500);
+    }
 
     // Initialize BroadcastChannel for 0ms same-origin multi-tab instant synthesis
     if (typeof BroadcastChannel !== 'undefined') {
@@ -164,8 +181,15 @@ class CloudSyncManager {
         }
       });
       window.addEventListener('online', () => {
+        console.log('[CloudSync] Network online restored. Flushing offline sync queue...');
         this.notify('syncing');
+        this.flushPendingOfflineSync().catch(() => {});
         this.forceDeepSynthesis().catch(() => {});
+      });
+      window.addEventListener('offline', () => {
+        console.log('[CloudSync] Network offline detected. Switching to offline safe persistence.');
+        this.setSaveState('offline');
+        this.notify('offline');
       });
     }
   }
@@ -267,9 +291,87 @@ class CloudSyncManager {
     this.notify(this.getStatus());
   }
 
+  public getSaveState(): SaveState {
+    return this.saveState;
+  }
+
+  public setSaveState(state: SaveState) {
+    this.saveState = state;
+    if (this.savedResetTimer) {
+      clearTimeout(this.savedResetTimer);
+      this.savedResetTimer = null;
+    }
+    if (state === 'saved') {
+      this.savedResetTimer = setTimeout(() => {
+        if (this.saveState === 'saved') {
+          this.saveState = 'idle';
+          this.notify(this.getStatus());
+        }
+      }, 2500);
+    }
+    this.notify(this.getStatus());
+
+    if (typeof window !== 'undefined') {
+      const dispatchStateEvent = () => {
+        window.dispatchEvent(
+          new CustomEvent('hss:cloud-save-state', {
+            detail: { state: this.saveState, lastSyncedAt: this.lastSyncedAt }
+          })
+        );
+      };
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(dispatchStateEvent);
+      } else {
+        setTimeout(dispatchStateEvent, 0);
+      }
+    }
+  }
+
+  public async flushPendingOfflineSync(): Promise<boolean> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      this.setSaveState('offline');
+      return false;
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.retryAttempt = 0;
+    const ok = await this.pushToCloud();
+    if (ok) {
+      try {
+        localStorage.removeItem('hss_pending_offline_sync');
+      } catch {}
+    }
+    return ok;
+  }
+
+  private scheduleOfflineRetry() {
+    if (this.retryTimer) return;
+    const delays = [2000, 5000, 10000, 20000];
+    const delay = delays[Math.min(this.retryAttempt, delays.length - 1)];
+    this.retryAttempt++;
+    this.retryTimer = setTimeout(async () => {
+      this.retryTimer = null;
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const ok = await this.pushToCloud();
+        if (ok) {
+          try {
+            localStorage.removeItem('hss_pending_offline_sync');
+          } catch {}
+          this.retryAttempt = 0;
+        } else {
+          this.scheduleOfflineRetry();
+        }
+      } else {
+        this.scheduleOfflineRetry();
+      }
+    }, delay);
+  }
+
   public addListener(listener: SyncListener) {
     this.listeners.add(listener);
-    listener(this.getStatus(), this.lastSyncedAt, this.getActiveSyncEmail(), this.lastSynthesisReport);
+    listener(this.getStatus(), this.lastSyncedAt, this.getActiveSyncEmail(), this.lastSynthesisReport, this.saveState);
     return () => {
       this.listeners.delete(listener);
     };
@@ -278,7 +380,7 @@ class CloudSyncManager {
   private notify(status: SyncStatus, error?: any) {
     this.currentStatus = status;
     const userEmail = this.getActiveSyncEmail();
-    this.listeners.forEach(fn => fn(this.getStatus(), this.lastSyncedAt, userEmail, this.lastSynthesisReport));
+    this.listeners.forEach(fn => fn(this.getStatus(), this.lastSyncedAt, userEmail, this.lastSynthesisReport, this.saveState));
   }
 
   public gatherAllLocalData(): UserCloudBundle {
@@ -852,7 +954,18 @@ class CloudSyncManager {
     }
 
     if (!currentUser && !syncEmail) {
+      this.setSaveState('offline');
       this.notify('offline');
+      return false;
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        localStorage.setItem('hss_pending_offline_sync', 'true');
+      } catch {}
+      this.setSaveState('offline');
+      this.notify('offline');
+      this.scheduleOfflineRetry();
       return false;
     }
 
@@ -864,6 +977,7 @@ class CloudSyncManager {
         return true;
       }
 
+      this.setSaveState('saving');
       this.notify('syncing');
 
       const promises: Promise<any>[] = [];
@@ -1043,13 +1157,23 @@ class CloudSyncManager {
         } catch {}
       }
 
+      try {
+        localStorage.removeItem('hss_pending_offline_sync');
+      } catch {}
+      this.retryAttempt = 0;
       this.lastSavedPayloadHash = currentHash;
       this.lastSyncedAt = bundle.lastSyncedAt;
       localStorage.setItem('hss_last_cloud_sync', bundle.lastSyncedAt);
+      this.setSaveState('saved');
       this.notify('synced');
       return true;
     } catch (err: any) {
       console.warn('Sync status notice:', err);
+      try {
+        localStorage.setItem('hss_pending_offline_sync', 'true');
+      } catch {}
+      this.setSaveState('offline');
+      this.scheduleOfflineRetry();
       this.notify('error', err);
       return false;
     }
@@ -1547,6 +1671,52 @@ class CloudSyncManager {
     } catch (e) {
       console.warn('Could not establish RTDB email snapshot listener', e);
     }
+
+    // Attach dual real-time listener on Firestore for maximum multi-device reliability
+    if (this.unsubscribeFirestoreEmailSnapshot) {
+      try {
+        this.unsubscribeFirestoreEmailSnapshot();
+      } catch (e) {}
+      this.unsubscribeFirestoreEmailSnapshot = null;
+    }
+
+    if (firestore) {
+      try {
+        const docRef = fsDoc(firestore, 'email_accounts', emailKey);
+        this.unsubscribeFirestoreEmailSnapshot = fsOnSnapshot(
+          docRef,
+          (docSnap: any) => {
+            if (this.isApplyingRemoteUpdate) return;
+            if (docSnap && docSnap.exists()) {
+              const data = docSnap.data();
+              if (data && data.appData) {
+                const updateDeviceId = data.deviceId || data.appData?.deviceId;
+                const incomingTimestamp = data.lastSyncedAt || data.appData.lastSyncedAt;
+
+                if (updateDeviceId && updateDeviceId === this.deviceId) {
+                  if (incomingTimestamp) this.lastSyncedAt = incomingTimestamp;
+                  return;
+                }
+
+                if (incomingTimestamp && incomingTimestamp !== this.lastSyncedAt) {
+                  this.applyCloudBundle(data.appData, updateDeviceId);
+                  this.lastSyncedAt = incomingTimestamp;
+                  this.notify('synced');
+                  if (onDataRefreshed) {
+                    onDataRefreshed();
+                  }
+                }
+              }
+            }
+          },
+          (fsErr: any) => {
+            console.warn('Firestore real-time email listener note:', fsErr);
+          }
+        );
+      } catch (e) {
+        console.warn('Could not establish Firestore email snapshot listener', e);
+      }
+    }
   }
 
   public stopRealtimeSync() {
@@ -1561,6 +1731,12 @@ class CloudSyncManager {
         this.unsubscribeEmailSnapshot();
       } catch (e) {}
       this.unsubscribeEmailSnapshot = null;
+    }
+    if (this.unsubscribeFirestoreEmailSnapshot) {
+      try {
+        this.unsubscribeFirestoreEmailSnapshot();
+      } catch (e) {}
+      this.unsubscribeFirestoreEmailSnapshot = null;
     }
     this.stopRealtimeBroadcasts();
   }
@@ -3683,11 +3859,15 @@ class CloudSyncManager {
     if (this.isApplyingRemoteUpdate) return;
     if (this.quotaExhaustedUntil > Date.now()) return;
 
+    // Immediately reflect saving state so user has instantaneous feedback
+    this.setSaveState('saving');
+
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    const delay = immediate ? 15 : 60;
+    // 850ms auto-save window batches rapid typing and completes within 1-2s
+    const delay = immediate ? 15 : 850;
     this.debounceTimer = setTimeout(() => {
       this.pushToCloud();
     }, delay);
