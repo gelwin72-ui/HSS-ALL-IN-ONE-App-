@@ -70,7 +70,9 @@ import {
   testEventTrigger,
   testPermissionDeniedResilience,
   testUnauthorizedUserSecurity,
-  sendSchoolNotification
+  sendSchoolNotification,
+  getActualNotificationStatus,
+  openAndroidNotificationSettings
 } from '../utils/fcm';
 
 interface SettingsScreenProps {
@@ -771,31 +773,73 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
 
         {/* Device Status Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase">Notification Permission</span>
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${fcmToken ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              {fcmToken ? 'Active & Receiving Alerts' : 'Permission Required / Idle'}
-            </p>
-          </div>
+        {(() => {
+          const actualStatus = getActualNotificationStatus();
+          const isDenied = actualStatus.osPermission === 'denied';
+          const isGrantedAndActive = actualStatus.isFullyActive;
 
-          <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase">Runtime Environment</span>
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">
-              <Smartphone className="w-3.5 h-3.5 text-blue-400" />
-              {isAndroid ? 'Native Android WebView Wrapper' : 'Web Browser / GitHub Pages PWA'}
-            </p>
-          </div>
+          return (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">OS Notification Permission</span>
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${isGrantedAndActive ? 'bg-emerald-400 animate-pulse' : isDenied ? 'bg-rose-500' : 'bg-amber-400'}`} />
+                    {isGrantedAndActive
+                      ? 'Granted & Push Subscription Active'
+                      : isDenied
+                      ? 'Disabled in System Settings'
+                      : 'Permission Required / Pending'}
+                  </p>
+                </div>
 
-          <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase">Backend Dispatcher</span>
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 text-cyan-400" />
-              Trusted Cloud Proxy (/api/send-fcm)
-            </p>
-          </div>
-        </div>
+                <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">Runtime Environment</span>
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5 text-blue-400" />
+                    {isAndroid ? 'Native Android WebView Container' : 'Web Browser / GitHub Pages PWA'}
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[#0F1115] border border-[#2D3139]/80 space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">Backend Dispatcher</span>
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                    Trusted Cloud Proxy (/api/send-fcm)
+                  </p>
+                </div>
+              </div>
+
+              {/* Disabled Status Warning & Android Settings Button */}
+              {isDenied && (
+                <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                    <div>
+                      <p className="font-extrabold text-rose-300 text-sm">Notifications Disabled in OS Settings</p>
+                      <p className="text-slate-300 text-xs mt-0.5">
+                        Push notifications are turned off in your Android / browser system settings. Enable notifications to receive institutional notices.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const opened = openAndroidNotificationSettings();
+                      if (!opened) {
+                        alert('To enable notifications:\n1. Open your device Settings\n2. Go to Apps -> HSS All In One\n3. Tap Notifications -> Allow Notifications');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow-md transition shrink-0 cursor-pointer"
+                  >
+                    Open Android Settings
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* NOTIFICATION CATEGORY CONTROLS */}
         <div className="space-y-3 pt-2">

@@ -26,7 +26,9 @@ export interface TeacherAccount {
   photoUrl?: string;
   dob?: string; // YYYY-MM-DD
   createdAt: string;
+  registeredAt?: string;
   lastActiveAt?: string;
+  lastLoginAt?: string;
   recentActivity?: string;
   studentCount?: number;
   attendanceCount?: number;

@@ -29,8 +29,8 @@ import { AutoSaveIndicator } from './components/AutoSaveIndicator';
 import { auth, onAuthStateChanged, signOut } from './utils/firebase';
 import { CloudSync } from './utils/cloudSync';
 import { ThemeManager } from './utils/themeHelper';
-import { requestAndSaveFCMToken, removeFCMToken, sendSchoolNotification } from './utils/fcm';
-import { setOneSignalUser, logoutOneSignalUser } from './utils/onesignal';
+import { requestAndSaveFCMToken, removeFCMToken, sendSchoolNotification, autoInitializeNotificationsOnBoot } from './utils/fcm';
+import { setOneSignalUser, logoutOneSignalUser, initOneSignal } from './utils/onesignal';
 
 // Screens
 import { AuthScreen } from './screens/AuthScreen';
@@ -157,9 +157,18 @@ export function App() {
     };
   }, []);
 
-  // Initialize Theme and listen to Auth & Email state for automatic seamless cross-device cloud sync
+  // Initialize Theme, Push Notifications, and listen to Auth & Email state
   useEffect(() => {
     ThemeManager.initTheme();
+
+    // Auto initialize push notification services if permission is granted
+    const sessionForPush = StorageService.getAuthSession();
+    const uidForPush = sessionForPush.currentTeacher?.id || sessionForPush.currentAdmin?.id || 'user';
+    const schoolCodeForPush = sessionForPush.currentTeacher?.schoolCode || sessionForPush.currentAdmin?.schoolCode || StorageService.getSchoolProfile().schoolCode || 'SSHSS@111213';
+    const roleForPush = sessionForPush.role || 'teacher';
+
+    autoInitializeNotificationsOnBoot(uidForPush, schoolCodeForPush, roleForPush).catch(() => {});
+    initOneSignal().catch(() => {});
 
     // Check if there is an active sync email in localStorage or current teacher/admin session
     const currentSession = StorageService.getAuthSession();

@@ -2046,7 +2046,6 @@ class CloudSyncManager {
 
     // Prevent pre-authorized admins from ever being permanently blocked from teacher access
     const PRE_AUTHORIZED_EMAILS = new Set([
-      'lincythomas1911@gmail.com',
       'gelwin72@gmail.com',
       'joicegeorge1910@gmail.com'
     ]);
@@ -2104,7 +2103,6 @@ class CloudSyncManager {
     const cleanCode = (schoolCode || 'SSHSS@111213').trim().toUpperCase();
 
     const PRE_AUTHORIZED = new Set([
-      'lincythomas1911@gmail.com',
       'gelwin72@gmail.com',
       'joicegeorge1910@gmail.com'
     ]);
@@ -3620,7 +3618,6 @@ class CloudSyncManager {
 
     // Pre-authorized Gmail accounts for SSHSS@111213
     const PRE_AUTHORIZED_EMAILS = new Set([
-      'lincythomas1911@gmail.com',
       'gelwin72@gmail.com',
       'joicegeorge1910@gmail.com'
     ]);
@@ -3630,7 +3627,6 @@ class CloudSyncManager {
     // Fast path: Immediately grant access for pre-authorized admins under SSHSS@111213
     if (isPreAuthorized && cleanSchoolCode === 'SSHSS@111213') {
       const adminNameDetermined = designation || (
-        cleanEmail.includes('lincy') ? 'Lincy Thomas' :
         cleanEmail.includes('gelwin') ? 'Gelwin' :
         cleanEmail.includes('joice') ? 'Joice George' : 'School Administrator'
       );

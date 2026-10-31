@@ -513,6 +513,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         }
 
         CloudSync.saveTeacherToSchool(cleanSchoolCode, newAccount).catch(() => {});
+
+        // Automatically dispatch Gmail email notification to School Admin for new teacher registration
+        fetch('/api/send-teacher-registration-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            teacherName: newAccount.name,
+            teacherEmail: cleanEmail,
+            teacherId: newAccount.id,
+            schoolCode: cleanSchoolCode,
+            schoolName: newAccount.schoolName || "St. Sebastian's Higher Secondary School",
+            registrationTime: nowIso
+          })
+        }).then(res => res.json()).then(data => {
+          console.log('[Registration Email] Admin email notification dispatch result:', data);
+        }).catch(err => {
+          console.warn('[Registration Email] Note:', err);
+        });
+
         CloudSync.recordTeacherActivity(cleanSchoolCode, {
           teacherId: newAccount.id,
           teacherName: newAccount.name,
@@ -936,7 +955,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
 
     try {
       const PRE_AUTHORIZED_EMAILS = new Set([
-        'lincythomas1911@gmail.com',
         'gelwin72@gmail.com',
         'joicegeorge1910@gmail.com'
       ]);
@@ -965,7 +983,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         } catch {}
 
         const adminNameDetermined = adminDesignation || (
-          cleanGmail.includes('lincy') ? 'Lincy Thomas' :
           cleanGmail.includes('gelwin') ? 'Gelwin' :
           cleanGmail.includes('joice') ? 'Joice George' : 'School Administrator'
         );

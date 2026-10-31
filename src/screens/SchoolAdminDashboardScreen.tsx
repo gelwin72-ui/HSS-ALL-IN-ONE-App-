@@ -1817,7 +1817,7 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
             }`}
           >
             <Users className="w-4 h-4 text-amber-300" />
-            <span>Teachers Information ({teachers.length})</span>
+            <span>Registered Teachers ({teachers.length})</span>
           </button>
 
           <button
@@ -1959,10 +1959,10 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
                     <Users className="w-5 h-5 text-amber-400" />
-                    <span>Teachers Information & Faculty Roster</span>
+                    <span>Registered Teachers ({teachers.length})</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    View, register, and update teacher profiles, profile photos, assigned classrooms, and birthday information for school code <strong className="text-amber-400 font-mono">{activeSchoolCode}</strong>.
+                    Real-time monitoring of teachers registered under School Code <strong className="text-amber-400 font-mono">{activeSchoolCode}</strong>.
                   </p>
                 </div>
 
@@ -2183,11 +2183,41 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
 
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <Hash className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                            Profile ID
+                          </span>
+                          <span className="text-purple-300 font-mono text-[10px] truncate" title={teacher.id || teacher.uid}>
+                            {teacher.id || teacher.uid}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <School className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            School Code
+                          </span>
+                          <span className="text-amber-400 font-mono font-bold text-[11px]">
+                            {teacher.schoolCode || activeSchoolCode}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            Date Registered
+                            Registered On
                           </span>
                           <span className="text-slate-300 font-mono text-[11px]">
-                            {teacher.createdAt ? new Date(teacher.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Active'}
+                            {teacher.createdAt ? new Date(teacher.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Active'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            Last Login
+                          </span>
+                          <span className="text-slate-300 font-mono text-[11px]">
+                            {teacher.lastActiveAt || teacher.lastLoginAt ? new Date(teacher.lastActiveAt || teacher.lastLoginAt!).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Just Now'}
                           </span>
                         </div>
 

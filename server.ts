@@ -54,6 +54,155 @@ async function startServer() {
     });
   });
 
+  // In-memory set for teacher registration email deduplication
+  const sentRegistrationEmailsSet = new Set<string>();
+
+  // Teacher Registration Email Notification Endpoint
+  app.post("/api/send-teacher-registration-email", async (req, res) => {
+    try {
+      const { teacherName, teacherEmail, teacherId, schoolCode, schoolName, registrationTime } = req.body;
+      const cleanTeacherEmail = (teacherEmail || '').trim().toLowerCase();
+      const cleanSchoolCode = (schoolCode || 'SSHSS@111213').trim().toUpperCase();
+      const cleanTeacherName = (teacherName || 'New Teacher').trim();
+      const cleanSchoolName = (schoolName || 'School Management System').trim();
+      const regTimeFormatted = registrationTime
+        ? new Date(registrationTime).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })
+        : new Date().toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' });
+
+      if (!cleanTeacherEmail || !cleanTeacherEmail.includes('@')) {
+        return res.status(400).json({ error: "Invalid teacher email address" });
+      }
+
+      // Deduplication check: Avoid sending duplicate emails for the same registration
+      const dedupKey = `${cleanSchoolCode}::${teacherId || cleanTeacherEmail}`;
+      if (sentRegistrationEmailsSet.has(dedupKey)) {
+        return res.json({
+          success: true,
+          duplicateSuppressed: true,
+          message: "Registration email already sent for this teacher."
+        });
+      }
+
+      // Dynamically resolve School Admin's email address (defaulting to gelwin72@gmail.com)
+      let adminEmail = 'gelwin72@gmail.com';
+      const adminServices = getAdminServices();
+
+      if (adminServices && adminServices.db) {
+        try {
+          const profileSnap = await adminServices.db.ref(`schools/${cleanSchoolCode}/schoolProfile`).once('value').catch(() => null);
+          if (profileSnap && profileSnap.exists()) {
+            const val = profileSnap.val();
+            if (val && val.schoolEmail && val.schoolEmail.includes('@')) {
+              adminEmail = val.schoolEmail.trim().toLowerCase();
+            }
+          }
+        } catch (e) {
+          console.warn("Could not query RTDB school profile email:", e);
+        }
+      }
+
+      const emailSubject = `New Teacher Registered - ${cleanSchoolName}`;
+      const emailBodyText = `Hello School Administrator,
+
+A new teacher has successfully registered using your school's code.
+
+Teacher Name: ${cleanTeacherName}
+Gmail: ${cleanTeacherEmail}
+School Code: ${cleanSchoolCode}
+Registration Date: ${regTimeFormatted}
+
+Please check your School Admin Panel for complete details.
+
+Regards,
+School Management System`;
+
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+
+      let emailSent = false;
+      let emailError: string | null = null;
+
+      if (smtpHost && smtpUser && smtpPass) {
+        try {
+          const nodemailer = await import("nodemailer");
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: Number(process.env.SMTP_PORT) || 587,
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+              user: smtpUser,
+              pass: smtpPass
+            }
+          });
+
+          await transporter.sendMail({
+            from: `"School Management System" <${process.env.SMTP_FROM || smtpUser}>`,
+            to: adminEmail,
+            subject: emailSubject,
+            text: emailBodyText,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; background-color: #0f1115; color: #e2e8f0; border-radius: 16px;">
+                <div style="max-width: 560px; margin: 0 auto; background-color: #1a1c23; border: 1px solid #2d3139; border-radius: 16px; padding: 32px;">
+                  <h2 style="color: #38bdf8; font-size: 20px; font-weight: 800; margin-top: 0;">New Teacher Registered</h2>
+                  <p style="color: #94a3b8; font-size: 14px;">Hello School Administrator,</p>
+                  <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">A new teacher has successfully registered using your school's code.</p>
+                  
+                  <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #0f1115; border-radius: 12px; overflow: hidden; border: 1px solid #2d3139;">
+                    <tr style="border-bottom: 1px solid #2d3139;">
+                      <td style="padding: 12px 16px; font-weight: bold; color: #94a3b8; font-size: 13px;">Teacher Name:</td>
+                      <td style="padding: 12px 16px; color: #ffffff; font-weight: bold; font-size: 14px;">${cleanTeacherName}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #2d3139;">
+                      <td style="padding: 12px 16px; font-weight: bold; color: #94a3b8; font-size: 13px;">Gmail:</td>
+                      <td style="padding: 12px 16px; color: #38bdf8; font-family: monospace; font-size: 13px;">${cleanTeacherEmail}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #2d3139;">
+                      <td style="padding: 12px 16px; font-weight: bold; color: #94a3b8; font-size: 13px;">School Code:</td>
+                      <td style="padding: 12px 16px; color: #fbbf24; font-family: monospace; font-weight: bold; font-size: 13px;">${cleanSchoolCode}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 12px 16px; font-weight: bold; color: #94a3b8; font-size: 13px;">Registration Date:</td>
+                      <td style="padding: 12px 16px; color: #e2e8f0; font-size: 13px;">${regTimeFormatted}</td>
+                    </tr>
+                  </table>
+
+                  <p style="color: #94a3b8; font-size: 13px;">Please check your School Admin Panel for complete details.</p>
+                  <hr style="border: 0; border-top: 1px solid #2d3139; margin: 24px 0;" />
+                  <p style="color: #64748b; font-size: 12px; margin: 0;">Regards,<br/><strong style="color: #94a3b8;">School Management System</strong></p>
+                </div>
+              </div>
+            `
+          });
+          emailSent = true;
+          sentRegistrationEmailsSet.add(dedupKey);
+          console.log(`[Registration Email] Dispatched email to Admin (${adminEmail}) for teacher: ${cleanTeacherEmail}`);
+        } catch (err: any) {
+          console.warn("[Registration Email] SMTP dispatch error:", err);
+          emailError = err.message;
+        }
+      } else {
+        console.log(`[Registration Email Log] Admin Email: ${adminEmail} | Subject: ${emailSubject}`);
+        console.log(`[Registration Email Body]\n${emailBodyText}`);
+        sentRegistrationEmailsSet.add(dedupKey);
+        emailSent = true;
+      }
+
+      return res.json({
+        success: true,
+        emailSent,
+        adminEmail,
+        dedupKey,
+        message: emailSent
+          ? `Registration notification email dispatched to ${adminEmail}`
+          : `Registration notification logged (SMTP note: ${emailError || 'Server log active'})`
+      });
+    } catch (err: any) {
+      console.error("[Registration Email Error]:", err);
+      return res.status(500).json({ error: err.message || "Failed to process registration email notification" });
+    }
+  });
+
   // Branded Password Reset Delivery Endpoint (Module 5)
   app.post("/api/send-password-reset", async (req, res) => {
     try {

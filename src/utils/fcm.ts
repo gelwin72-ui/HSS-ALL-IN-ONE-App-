@@ -636,3 +636,97 @@ export async function testUnauthorizedUserSecurity(schoolCode: string): Promise<
     };
   }
 }
+
+/**
+ * Checks actual operating system notification permission status & push subscription status.
+ * Never displays notifications as enabled unless OS permission AND push subscription are active.
+ */
+export function getActualNotificationStatus(): {
+  osPermission: 'granted' | 'denied' | 'default' | 'unsupported';
+  fcmToken: string | null;
+  oneSignalSubId: string | null;
+  isFullyActive: boolean;
+  androidEnabled: boolean;
+} {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return {
+      osPermission: 'unsupported',
+      fcmToken: null,
+      oneSignalSubId: null,
+      isFullyActive: false,
+      androidEnabled: false
+    };
+  }
+
+  const perm = Notification.permission;
+  const token = getCachedFCMToken();
+  const isAndroid = isRunningInAndroidApp();
+
+  let androidEnabled = true;
+  if (isAndroid) {
+    const androidApp = (window as any).AndroidApp || (window as any).AndroidBridge;
+    if (androidApp && typeof androidApp.areNotificationsEnabled === 'function') {
+      try {
+        androidEnabled = Boolean(androidApp.areNotificationsEnabled());
+      } catch {}
+    }
+  }
+
+  const oneSignalSubId = (window as any).OneSignal?.User?.PushSubscription?.id || null;
+  const isFullyActive = perm === 'granted' && androidEnabled && Boolean(token);
+
+  return {
+    osPermission: !androidEnabled ? 'denied' : perm,
+    fcmToken: token,
+    oneSignalSubId,
+    isFullyActive,
+    androidEnabled
+  };
+}
+
+/**
+ * Attempts to open Android native Notification Settings
+ */
+export function openAndroidNotificationSettings(): boolean {
+  if (typeof window === 'undefined') return false;
+  const androidApp = (window as any).AndroidApp || (window as any).AndroidBridge;
+  if (androidApp && typeof androidApp.openNotificationSettings === 'function') {
+    try {
+      androidApp.openNotificationSettings();
+      return true;
+    } catch (e) {
+      console.warn('[FCM] Native openNotificationSettings error:', e);
+    }
+  }
+  if (androidApp && typeof androidApp.openSettings === 'function') {
+    try {
+      androidApp.openSettings();
+      return true;
+    } catch (e) {
+      console.warn('[FCM] Native openSettings error:', e);
+    }
+  }
+  return false;
+}
+
+/**
+ * Automatic FCM & Push Notification Initialization on app boot / user login
+ */
+export async function autoInitializeNotificationsOnBoot(
+  userUid?: string,
+  schoolCode?: string,
+  userRole: string = 'teacher'
+): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const status = getActualNotificationStatus();
+    if (status.osPermission === 'granted') {
+      const token = await requestAndSaveFCMToken(userUid, schoolCode, userRole);
+      return token;
+    }
+  } catch (err) {
+    console.warn('[FCM] Auto-initialize on boot note:', err);
+  }
+  return null;
+}
