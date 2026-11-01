@@ -702,7 +702,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
               try {
                 cred = await signInWithEmailAndPassword(auth, cleanQuery, loginPassword);
               } catch (signInErr: any) {
-                if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential') {
+                if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential' || signInErr?.code === 'auth/wrong-password') {
                   cred = await createUserWithEmailAndPassword(auth, cleanQuery, loginPassword).catch(() => null);
                 }
               }
@@ -765,7 +765,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
           try {
             cred = await signInWithEmailAndPassword(auth, cleanQuery, loginPassword);
           } catch (signInErr: any) {
-            if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential') {
+            if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential' || signInErr?.code === 'auth/wrong-password') {
               cred = await createUserWithEmailAndPassword(auth, cleanQuery, loginPassword).catch(() => null);
             }
           }
@@ -959,149 +959,75 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         'joicegeorge1910@gmail.com'
       ]);
 
-      const isKnownAdmin = PRE_AUTHORIZED_EMAILS.has(cleanGmail);
-
-      // Fast-path: Pre-authorized school admin for SSHSS@111213
-      if (isKnownAdmin && cleanSchoolCode === 'SSHSS@111213') {
-        let authUid = 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
-
-        // Quick Firebase Auth check in background or rapid race (1000ms max)
-        try {
-          const authTask = signInWithEmailAndPassword(auth, cleanGmail, adminPassword)
-            .then(res => res.user?.uid || null)
-            .catch(async (authErr: any) => {
-              if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential') {
-                const created = await createUserWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
-                return created?.user?.uid || null;
-              }
-              return null;
-            });
-
-          const timeoutPromise = new Promise<null>(res => setTimeout(() => res(null), 1000));
-          const fastUid = await Promise.race([authTask, timeoutPromise]);
-          if (fastUid) authUid = fastUid;
-        } catch {}
-
-        const adminNameDetermined = adminDesignation || (
-          cleanGmail.includes('gelwin') ? 'Gelwin' :
-          cleanGmail.includes('joice') ? 'Joice George' : 'School Administrator'
-        );
-
-        const adminAccount: SchoolAdminAccount = {
-          id: authUid,
-          adminName: adminNameDetermined,
-          schoolName: StorageService.getSchoolProfile().schoolName || "St. Sebastian's Higher Secondary School",
-          schoolCode: cleanSchoolCode,
-          email: cleanGmail,
-          phone: '',
-          designation: adminDesignation || 'Head of School',
-          role: 'admin',
-          createdAt: new Date().toISOString()
-        };
-
-        // Instant local persistence
-        const currentSchool = StorageService.getSchoolProfile();
-        StorageService.saveSchoolProfile({
-          ...currentSchool,
-          schoolCode: cleanSchoolCode,
-          schoolName: adminAccount.schoolName,
-          principalName: adminAccount.adminName,
-          schoolEmail: cleanGmail
-        });
-
-        StorageService.setAuthSession({
-          isLoggedIn: true,
-          role: 'admin',
-          currentTeacher: null,
-          currentAdmin: adminAccount
-        });
-
-        // Record entered Gmail in Realtime Database under 'gmail' (no passwords)
-        if (cleanGmail) {
-          CloudSync.recordGmailEntry(cleanGmail, {
-            role: 'admin',
-            name: adminAccount.adminName,
-            schoolCode: cleanSchoolCode,
-            loginMethod: 'email'
-          }).catch(() => {});
-        }
-
-        // Non-blocking background sync & real-time sync activation
-        CloudSync.setActiveSyncEmail(cleanGmail);
-        if (auth?.currentUser) {
-          CloudSync.startRealtimeSync(auth.currentUser);
-        }
-        CloudSync.verifyAndSyncSchoolAdmin(authUid, cleanGmail, cleanSchoolCode, adminDesignation).catch(() => {});
-        CloudSync.recordLoginActivity(cleanSchoolCode, {
-          email: cleanGmail,
-          accessMethod: 'School Admin Panel',
-          role: 'admin',
-          success: true,
-          details: `Authorized School Admin logged in: ${cleanGmail}`
-        }).catch(() => {});
-
-        setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted to School Admin Panel.`);
-        if (onAdminLoginSuccess) {
-          onAdminLoginSuccess(adminAccount);
-        }
+      if (!PRE_AUTHORIZED_EMAILS.has(cleanGmail)) {
+        setErrorMsg('Access Denied: Only authorized school admin Gmail addresses (joicegeorge1910@gmail.com or gelwin72@gmail.com) can access the School Admin Panel.');
         setIsLoading(false);
         return;
       }
 
-      // Standard path for other admin accounts
-      let authResult: any = null;
-      try {
-        authResult = await Promise.race([
-          signInWithEmailAndPassword(auth, cleanGmail, adminPassword),
-          new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500))
-        ]);
-      } catch (authErr: any) {
-        const code = authErr?.code || '';
-        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-          setErrorMsg('Invalid School Admin credentials. Please verify your Gmail and Password.');
-          setIsLoading(false);
-          return;
-        } else if (code === 'auth/user-not-found') {
-          setErrorMsg('No School Admin account found with this Gmail.');
-          setIsLoading(false);
-          return;
-        }
+      if (cleanSchoolCode !== 'SSHSS@111213') {
+        setErrorMsg('Invalid School Code. Must be SSHSS@111213.');
+        setIsLoading(false);
+        return;
       }
 
-      const authUser = authResult?.user || auth?.currentUser;
-      const uid = authUser?.uid || 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
+      // Check specific passwords
+      if (cleanGmail === 'joicegeorge1910@gmail.com' && adminPassword !== 'joice1910') {
+        setErrorMsg('Incorrect password for joicegeorge1910@gmail.com. Please enter the correct password.');
+        setIsLoading(false);
+        return;
+      }
+      if (cleanGmail === 'gelwin72@gmail.com' && adminPassword !== 'elwin1234') {
+        setErrorMsg('Incorrect password for gelwin72@gmail.com. Please enter the correct password.');
+        setIsLoading(false);
+        return;
+      }
 
-      const verifyRes = await CloudSync.verifyAndSyncSchoolAdmin(
-        uid,
-        cleanGmail,
-        cleanSchoolCode,
-        adminDesignation
+      let authUid = 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
+
+      // Quick Firebase Auth check in background or rapid race (1500ms max)
+      try {
+        const authTask = signInWithEmailAndPassword(auth, cleanGmail, adminPassword)
+          .then(res => res.user?.uid || null)
+          .catch(async (authErr: any) => {
+            if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential' || authErr?.code === 'auth/wrong-password') {
+              const created = await createUserWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
+              if (!created) {
+                const retryLogin = await signInWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
+                return retryLogin?.user?.uid || null;
+              }
+              return created?.user?.uid || null;
+            }
+            return null;
+          });
+
+        const timeoutPromise = new Promise<null>(res => setTimeout(() => res(null), 1500));
+        const fastUid = await Promise.race([authTask, timeoutPromise]);
+        if (fastUid) authUid = fastUid;
+      } catch {}
+
+      const adminNameDetermined = adminDesignation || (
+        cleanGmail.includes('gelwin') ? 'Gelwin' : 'Joice George'
       );
 
-      if (!verifyRes.authorized) {
-        if (auth?.currentUser) await signOut(auth).catch(() => {});
-        setErrorMsg(verifyRes.reason || 'Access Denied\n\nThis Gmail account is not authorized to access this School Admin Panel.');
-        setIsLoading(false);
-        return;
-      }
-
       const adminAccount: SchoolAdminAccount = {
-        id: uid,
-        adminName: verifyRes.adminRecord?.adminName || adminDesignation || 'School Administrator',
-        schoolName: verifyRes.adminRecord?.schoolName || "St. Sebastian's Higher Secondary School",
+        id: authUid,
+        adminName: adminNameDetermined,
+        schoolName: "St. Sebastian's Higher Secondary School Koodaranhi",
         schoolCode: cleanSchoolCode,
         email: cleanGmail,
         phone: '',
         designation: adminDesignation || 'Head of School',
         role: 'admin',
-        createdAt: verifyRes.adminRecord?.createdAt || new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
+      // Instant local persistence
       const currentSchool = StorageService.getSchoolProfile();
       StorageService.saveSchoolProfile({
         ...currentSchool,
         schoolCode: cleanSchoolCode,
-        schoolName: adminAccount.schoolName,
+        schoolName: "St. Sebastian's Higher Secondary School Koodaranhi",
         principalName: adminAccount.adminName,
         schoolEmail: cleanGmail
       });
@@ -1123,14 +1049,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         }).catch(() => {});
       }
 
+      // Non-blocking background sync & real-time sync activation
       CloudSync.setActiveSyncEmail(cleanGmail);
-      if (authUser) CloudSync.startRealtimeSync(authUser);
+      if (auth?.currentUser) {
+        CloudSync.startRealtimeSync(auth.currentUser);
+      }
+      CloudSync.verifyAndSyncSchoolAdmin(authUid, cleanGmail, cleanSchoolCode, adminDesignation).catch(() => {});
+      CloudSync.recordLoginActivity(cleanSchoolCode, {
+        email: cleanGmail,
+        accessMethod: 'School Admin Panel',
+        role: 'admin',
+        success: true,
+        details: `Authorized School Admin logged in: ${cleanGmail}`
+      }).catch(() => {});
 
-      setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted.`);
+      setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted to School Admin Panel.`);
       if (onAdminLoginSuccess) {
         onAdminLoginSuccess(adminAccount);
       }
       setIsLoading(false);
+      return;
+
     } catch (err: any) {
       console.error('School Admin authorization error:', err);
       setErrorMsg('Authentication and authorization failed. Please check your credentials.');

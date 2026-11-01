@@ -6,7 +6,7 @@ import {defineConfig} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
-  const basePath = process.env.VITE_BASE_PATH || './';
+  const basePath = process.env.VITE_BASE_PATH || '/HSS-ALL-IN-ONE-App-/';
   return {
     base: basePath,
     plugins: [
