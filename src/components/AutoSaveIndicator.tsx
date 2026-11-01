@@ -7,10 +7,19 @@ export const AutoSaveIndicator: React.FC = () => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    let hideTimer: any = null;
+
     const handleState = (state: SaveState) => {
       setSaveState(state);
-      if (state === 'saving' || state === 'saved' || state === 'offline') {
+      if (hideTimer) clearTimeout(hideTimer);
+
+      if (state === 'saving' || state === 'offline') {
         setVisible(true);
+      } else if (state === 'saved') {
+        setVisible(true);
+        hideTimer = setTimeout(() => {
+          setVisible(false);
+        }, 1800);
       } else {
         setVisible(false);
       }
