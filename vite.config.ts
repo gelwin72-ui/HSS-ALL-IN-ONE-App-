@@ -152,16 +152,20 @@ export default defineConfig(() => {
           ]
         }
       }),
-      // Ensure SPA fallback works for deep links and refreshes
+      // Ensure SPA fallback works for deep links, subpaths, and refreshes on GitHub Pages
       {
         name: 'spa-fallback-plugin',
         closeBundle() {
           const distDir = path.resolve(__dirname, 'dist');
           const distIndex = path.resolve(distDir, 'index.html');
           const dist404 = path.resolve(distDir, '404.html');
+          const distNoJekyll = path.resolve(distDir, '.nojekyll');
           if (fs.existsSync(distIndex)) {
             fs.copyFileSync(distIndex, dist404);
           }
+          try {
+            fs.writeFileSync(distNoJekyll, '');
+          } catch (e) {}
         },
       },
     ],
