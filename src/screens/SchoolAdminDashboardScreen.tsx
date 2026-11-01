@@ -382,22 +382,47 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Load teachers for this school code (production Firebase Realtime Database is authoritative source of truth)
+  // Load teachers for this school code (combining local storage and real-time remote Firebase database)
   const teachers = useMemo<TeacherAccount[]>(() => {
-    // Only use remote Firebase data as the authoritative source of truth.
-    // listenToSchoolTeachers automatically filters out permanently and temporarily deleted teachers.
-    return (remoteTeachers || [])
-      .filter(rt => rt && rt.schoolCode && rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())
-      .map(rt => ({
-        ...rt,
-        id: rt.uid || rt.id,
-        uid: rt.uid || rt.id,
-        email: rt.email || rt.gmail || '',
-        gmail: rt.gmail || rt.email || '',
-        password: '',
-        subject: rt.subject || rt.primarySubject || rt.designation || 'General',
-        status: (rt.status as 'active' | 'inactive' | 'suspended') || 'active'
-      }));
+    const map = new Map<string, TeacherAccount>();
+
+    // 1. Local storage teachers matching activeSchoolCode
+    const localTeachers = StorageService.getTeacherAccounts() || [];
+    localTeachers.forEach(lt => {
+      if (lt && lt.schoolCode && lt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+        const id = lt.uid || lt.id || lt.email;
+        if (id) {
+          map.set(id, {
+            ...lt,
+            id,
+            uid: lt.uid || lt.id,
+            email: lt.email || lt.gmail || '',
+            gmail: lt.gmail || lt.email || '',
+            status: (lt.status as 'active' | 'inactive' | 'suspended') || 'active'
+          });
+        }
+      }
+    });
+
+    // 2. Remote Firebase teachers
+    (Array.isArray(remoteTeachers) ? remoteTeachers : []).forEach(rt => {
+      if (rt && rt.schoolCode && rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+        const id = rt.uid || rt.id || rt.email;
+        if (id) {
+          map.set(id, {
+            ...rt,
+            id,
+            uid: rt.uid || rt.id,
+            email: rt.email || rt.gmail || '',
+            gmail: rt.gmail || rt.email || '',
+            subject: rt.subject || rt.primarySubject || rt.designation || 'General',
+            status: (rt.status as 'active' | 'inactive' | 'suspended') || 'active'
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
   }, [activeSchoolCode, remoteTeachers]);
 
   // Load all classes in school - strictly calculates classes created by the teacher(s) for entering the app + any created after entering
