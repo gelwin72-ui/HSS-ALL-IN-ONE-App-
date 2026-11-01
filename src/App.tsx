@@ -272,7 +272,7 @@ export function App() {
     setAuthRole('teacher');
     setCurrentAdmin(null);
     setIsAuthenticated(true);
-    const schoolCode = account.schoolCode || StorageService.getSchoolProfile().schoolCode;
+    const schoolCode = account.schoolCode || StorageService.getSchoolProfile().schoolCode || 'SSHSS@111213';
     requestAndSaveFCMToken(uid, schoolCode).catch(() => {});
     setOneSignalUser({
       userId: uid,
@@ -285,7 +285,20 @@ export function App() {
       assignedClass: account.assignedClass,
       subject: account.subject || account.primarySubject
     }).catch(() => {});
+
+    // Save teacher profile to school admin roster immediately & sync cloud state
+    CloudSync.saveTeacherToSchool(schoolCode, account).catch(() => {});
     CloudSync.syncAllTeacherClassesToSchool(schoolCode, uid, account.email || account.gmail).catch(() => {});
+    CloudSync.recordTeacherActivity(schoolCode, {
+      teacherId: uid,
+      teacherName: account.name,
+      subject: account.subject || account.primarySubject,
+      assignedClass: account.assignedClass,
+      activityType: 'login',
+      description: `Teacher ${account.name} entered app (School: ${schoolCode})`
+    }).catch(() => {});
+    CloudSync.scheduleAutoSync(true);
+
     showToast(`Welcome, ${account.name}! Multi-device sync active.`, 'success');
   };
 

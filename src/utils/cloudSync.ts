@@ -1023,6 +1023,48 @@ class CloudSyncManager {
         }
       }
 
+      // Auto-sync current teacher profile to school directory in cloud
+      const currentTeacherAcc = activeSession.currentTeacher || (bundle.teacherAccounts && bundle.teacherAccounts.length > 0 ? bundle.teacherAccounts[0] : null);
+      if (schoolCode && currentTeacherAcc && currentTeacherAcc.name) {
+        const cleanTId = currentTeacherAcc.uid || currentTeacherAcc.id || currentUser?.uid;
+        const cleanTEmail = (currentTeacherAcc.email || currentTeacherAcc.gmail || currentUser?.email || '').trim().toLowerCase();
+        if (cleanTId) {
+          const teacherProfileRecord = {
+            id: cleanTId,
+            uid: cleanTId,
+            name: currentTeacherAcc.name || bundle.teacherInfo.teacherName || 'Teacher',
+            email: cleanTEmail,
+            gmail: cleanTEmail,
+            phone: currentTeacherAcc.phone || bundle.teacherInfo.phone || '',
+            schoolName: bundle.schoolProfile.schoolName || currentTeacherAcc.schoolName || "St. Sebastian's Higher Secondary School",
+            schoolCode: schoolCode,
+            academicYear: currentTeacherAcc.academicYear || bundle.teacherInfo.academicYear || '2026-2027',
+            subject: currentTeacherAcc.subject || currentTeacherAcc.primarySubject || bundle.teacherInfo.designation || 'General',
+            primarySubject: currentTeacherAcc.primarySubject || currentTeacherAcc.subject || 'General',
+            standard: currentTeacherAcc.standard || bundle.classInfo.standard || '',
+            stream: currentTeacherAcc.stream || bundle.classInfo.stream || '',
+            section: currentTeacherAcc.section || bundle.classInfo.section || '',
+            assignedClass: currentTeacherAcc.assignedClass || bundle.classInfo.className || '',
+            designation: currentTeacherAcc.designation || bundle.teacherInfo.designation || 'Class Teacher',
+            status: 'active',
+            createdAt: currentTeacherAcc.createdAt || new Date().toISOString(),
+            lastActiveAt: new Date().toISOString(),
+            recentActivity: currentTeacherAcc.recentActivity || `Active in ${bundle.classInfo.className || 'Classroom'}`
+          };
+
+          if (database) {
+            promises.push(set(ref(database, `schools/${schoolCode}/teachers/${cleanTId}`), teacherProfileRecord).catch(() => {}));
+            promises.push(set(ref(database, `teachers/${cleanTId}`), teacherProfileRecord).catch(() => {}));
+          }
+          if (firestore) {
+            try {
+              const fsSchoolTeacherRef = fsDoc(firestore, `schools/${schoolCode}/teachers/${cleanTId}`);
+              promises.push(fsSetDoc(fsSchoolTeacherRef, teacherProfileRecord, { merge: true }).catch(() => {}));
+            } catch {}
+          }
+        }
+      }
+
       // Fast parallel class synchronization to school roster
       if (schoolCode && bundle.classesCatalog && bundle.classesCatalog.length > 0) {
         for (const cls of bundle.classesCatalog) {
@@ -3014,35 +3056,70 @@ class CloudSyncManager {
       const teachersRefPath = ref(database, `schools/${cleanCode}/teachers`);
       this.unsubscribeSchoolTeachersSnapshot = onValue(
         teachersRefPath,
-        snapshot => {
-          const remoteTeachers: TeacherAccount[] = [];
+        async snapshot => {
+          const map = new Map<string, TeacherAccount>();
+
+          const addTeacher = (t: any) => {
+            if (
+              t &&
+              t.status !== 'deleted' &&
+              t.status !== 'permanently_deleted' &&
+              t.status !== 'temporary_deleted' &&
+              !t.temporarilyDeleted &&
+              !t.permanentlyDeleted
+            ) {
+              const key = t.uid || t.id || t.email || t.gmail;
+              if (!key) return;
+
+              // Ensure temporary deletion flags in local storage are cleared for this active teacher
+              StorageService.removeTemporarilyDeletedTeacherId(t.id, t.email || t.gmail);
+              if (t.uid) StorageService.removeTemporarilyDeletedTeacherId(t.uid);
+
+              map.set(key, {
+                ...t,
+                id: key,
+                uid: key,
+                email: t.email || t.gmail || '',
+                gmail: t.gmail || t.email || '',
+                schoolCode: cleanCode,
+                status: 'active'
+              });
+            }
+          };
+
           if (snapshot.exists()) {
             snapshot.forEach(childSnap => {
-              const t = childSnap.val() as any;
-              if (
-                t &&
-                t.status !== 'deleted' &&
-                t.status !== 'permanently_deleted' &&
-                t.status !== 'temporary_deleted' &&
-                !t.temporarilyDeleted &&
-                !t.permanentlyDeleted
-              ) {
-                // Ensure temporary deletion flags in local storage are cleared for this active teacher
-                StorageService.removeTemporarilyDeletedTeacherId(t.id, t.email || t.gmail);
-                if (t.uid) StorageService.removeTemporarilyDeletedTeacherId(t.uid);
-
-                remoteTeachers.push({
-                  ...t,
-                  id: t.uid || t.id,
-                  uid: t.uid || t.id,
-                  email: t.email || t.gmail || '',
-                  gmail: t.gmail || t.email || '',
-                  status: 'active'
-                });
-              }
+              addTeacher(childSnap.val());
             });
           }
 
+          // Fallback query to root teachers/ in RTDB for matching schoolCode
+          try {
+            const rootTeachersSnap = await get(ref(database, 'teachers')).catch(() => null);
+            if (rootTeachersSnap && rootTeachersSnap.exists()) {
+              rootTeachersSnap.forEach(child => {
+                const val = child.val();
+                if (val && val.schoolCode && val.schoolCode.trim().toUpperCase() === cleanCode) {
+                  addTeacher(val);
+                }
+              });
+            }
+          } catch (e) {}
+
+          // Fallback query to Firestore schools/schoolCode/teachers
+          if (firestore) {
+            try {
+              const fsDocs = await fsGetDocs(fsCollection(firestore, `schools/${cleanCode}/teachers`)).catch(() => null);
+              if (fsDocs && !fsDocs.empty) {
+                fsDocs.forEach((d: any) => {
+                  const val = d.data();
+                  if (val) addTeacher({ ...val, id: val.id || d.id });
+                });
+              }
+            } catch (e) {}
+          }
+
+          const remoteTeachers = Array.from(map.values());
           const localTeachers = StorageService.getTeacherAccounts();
           const otherSchoolTeachers = localTeachers.filter(lt => (lt.schoolCode || '').trim().toUpperCase() !== cleanCode);
           const updatedLocalTeachers = [...otherSchoolTeachers, ...remoteTeachers];

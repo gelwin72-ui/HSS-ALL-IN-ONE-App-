@@ -422,8 +422,33 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
       }
     });
 
+    // 3. Extract teacher profiles directly from synced class records if missing in teachers collection
+    (Array.isArray(remoteClasses) ? remoteClasses : []).forEach(rc => {
+      if (rc && (rc.teacherName || rc.createdByTeacherEmail) && (!rc.schoolCode || rc.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())) {
+        const tId = rc.teacherUid || rc.teacherId || rc.createdByTeacherId || rc.createdByTeacherEmail;
+        const tEmail = (rc.createdByTeacherEmail || '').trim().toLowerCase();
+        if (tId && !map.has(tId)) {
+          map.set(tId, {
+            id: tId,
+            uid: tId,
+            name: rc.teacherName || 'Teacher',
+            email: tEmail,
+            gmail: tEmail,
+            phone: '',
+            schoolCode: activeSchoolCode,
+            schoolName: "St. Sebastian's Higher Secondary School",
+            subject: rc.stream || 'General',
+            assignedClass: rc.className,
+            designation: 'Class Teacher',
+            status: 'active',
+            createdAt: rc.createdAt || new Date().toISOString()
+          });
+        }
+      }
+    });
+
     return Array.from(map.values());
-  }, [activeSchoolCode, remoteTeachers]);
+  }, [activeSchoolCode, remoteTeachers, remoteClasses]);
 
   // Load all classes in school - strictly calculates classes created by the teacher(s) for entering the app + any created after entering
   const classesList = useMemo(() => {
