@@ -167,17 +167,19 @@ export const StorageService = {
   init() {
     try {
       const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-      const demoCleaned = localStorage.getItem('hss_demo_data_purged_v1');
+      const demoCleanedV2 = localStorage.getItem('hss_demo_data_purged_v2');
 
-      if (!demoCleaned) {
-        // Purge old demo/dummy data from local storage
+      if (!demoCleanedV2) {
+        // Purge old demo/dummy data and teacher accounts from local storage
         const currentTeachers = this.getTeacherAccounts();
         const cleanedTeachers = currentTeachers.filter(t => 
           t && t.email && 
           t.email.toLowerCase() !== 'teacher@gmail.com' && 
           t.email.toLowerCase() !== 'ddjmann@gmail.com' &&
           t.id !== 'teacher-1789232615710' &&
-          t.name !== 'Fff'
+          t.name !== 'Fff' &&
+          !t.name?.toLowerCase().includes('demo') &&
+          !t.email?.toLowerCase().includes('example.com')
         );
         this.saveTeacherAccounts(cleanedTeachers);
 
@@ -186,7 +188,8 @@ export const StorageService = {
         if (session.currentTeacher && (
           session.currentTeacher.email === 'ddjmann@gmail.com' ||
           session.currentTeacher.id === 'teacher-1789232615710' ||
-          session.currentTeacher.name === 'Fff'
+          session.currentTeacher.name === 'Fff' ||
+          session.currentTeacher.email?.toLowerCase().includes('example.com')
         )) {
           this.setAuthSession({
             isLoggedIn: false,
@@ -200,13 +203,14 @@ export const StorageService = {
         const currentClasses = this.getClassesList();
         const cleanedClasses = currentClasses.filter(c => 
           c && c.createdByTeacherEmail !== 'ddjmann@gmail.com' &&
-          c.teacherName !== 'Fff'
+          c.teacherName !== 'Fff' &&
+          !c.className?.toLowerCase().includes('demo')
         );
         if (cleanedClasses.length !== currentClasses.length) {
           this.saveClassesList(cleanedClasses);
         }
 
-        localStorage.setItem('hss_demo_data_purged_v1', 'true');
+        localStorage.setItem('hss_demo_data_purged_v2', 'true');
       }
 
       if (!initialized) {
@@ -220,6 +224,7 @@ export const StorageService = {
         this.saveReminders([]);
         this.saveSettings(DEFAULT_SETTINGS);
         this.saveClassesList([]);
+        this.saveTimetables([]);
         localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
       }
     } catch (e) {
