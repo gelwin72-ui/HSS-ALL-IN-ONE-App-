@@ -55,8 +55,8 @@ export function isDuplicateNotification(title: string, body: string): boolean {
  * Returns active base path respecting GitHub Pages deployment
  */
 export function getAppBasePath(): string {
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/HSS-ALL-IN-ONE')) {
-    return '/HSS-ALL-IN-ONE/';
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/HSS-ALL-IN-ONE-App-')) {
+    return '/HSS-ALL-IN-ONE-App-/';
   }
   return '/';
 }

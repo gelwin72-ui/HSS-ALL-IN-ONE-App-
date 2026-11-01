@@ -232,7 +232,7 @@ School Management System`;
       if (smtpHost && smtpUser && smtpPass) {
         // Generate secure action code password reset link via Firebase Admin SDK
         const actionLink = await admin.auth.generatePasswordResetLink(cleanEmail, {
-          url: "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/"
+          url: "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE-App-/"
         });
 
         const nodemailer = await import("nodemailer");
@@ -246,7 +246,7 @@ School Management System`;
           }
         });
 
-        const logoUrl = "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/icon.png";
+        const logoUrl = "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE-App-/icon.png";
         const emailHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -334,7 +334,7 @@ School Management System`;
         body,
         category = "notices",
         targetAudience = "All",
-        url = "/HSS-ALL-IN-ONE/",
+        url = "/HSS-ALL-IN-ONE-App-/",
         targetUid,
         imageUrl,
         iconUrl
@@ -405,7 +405,7 @@ School Management System`;
               timestamp: String(Date.now())
             },
             url: String(url),
-            chrome_web_icon: iconUrl || "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/icon.png",
+            chrome_web_icon: iconUrl || "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE-App-/icon.png",
             chrome_web_image: imageUrl,
             big_picture: imageUrl,
             small_icon: "stock_print_preview"
