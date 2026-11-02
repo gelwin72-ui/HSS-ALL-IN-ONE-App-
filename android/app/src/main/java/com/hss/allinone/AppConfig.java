@@ -4,7 +4,7 @@ package com.hss.allinone;
  * Global Configuration for HSS ALL IN ONE Android Application.
  *
  * The primary target URL is hosted on GitHub Pages:
- * https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/
+ * https://gelwin72-ui.github.io/HSS-ALL-IN-ONE-App-/
  *
  * Any updates published to GitHub Pages are loaded live in this app
  * without requiring the user to reinstall or update the APK.
@@ -19,7 +19,7 @@ public final class AppConfig {
      * Primary live web application URL.
      * Edit this constant if your GitHub Pages or domain URL changes in the future.
      */
-    public static final String TARGET_URL = "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE/";
+    public static final String TARGET_URL = "https://gelwin72-ui.github.io/HSS-ALL-IN-ONE-App-/";
 
     /**
      * Primary domain allowed for internal navigation.
