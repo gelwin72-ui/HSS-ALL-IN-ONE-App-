@@ -1,6 +1,6 @@
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { ref, set, remove, get } from 'firebase/database';
-import { app, database, auth } from './firebase';
+import { app, database, auth, firestore, fsDoc, fsSetDoc } from './firebase';
 
 export interface NotificationPreferences {
   enabled: boolean;
@@ -64,23 +64,77 @@ export function getAppBasePath(): string {
 /**
  * Checks if the app is currently running inside the Android APK WebView container
  */
+/**
+ * Checks if the app is currently running inside the Android APK WebView container (Median.co / GoNative / Custom WebView)
+ */
 export function isRunningInAndroidApp(): boolean {
   if (typeof window === 'undefined') return false;
-  const androidApp = (window as any).AndroidApp;
-  return Boolean(androidApp && (androidApp.isNativeApp?.() || androidApp.getFcmToken));
+  const w = window as any;
+  const androidApp = w.AndroidApp || w.AndroidBridge;
+  const gonative = w.gonative || w.median;
+  const ua = navigator.userAgent || '';
+  return Boolean(
+    androidApp ||
+    gonative ||
+    w.gonative_push_fcm_token ||
+    w.median_push_fcm_token ||
+    ua.includes('gonative') ||
+    ua.includes('median') ||
+    ua.includes('wv') ||
+    (ua.includes('Android') && ua.includes('Version/'))
+  );
 }
 
 /**
- * Retrieves native FCM token from the Android container if running in Android
+ * Retrieves native FCM token from the Android container if running in Android or Median.co
  */
 export function getAndroidNativeFCMToken(): string | null {
   if (typeof window === 'undefined') return null;
-  const androidApp = (window as any).AndroidApp;
+  const w = window as any;
+  const androidApp = w.AndroidApp || w.AndroidBridge;
   if (androidApp && typeof androidApp.getFcmToken === 'function') {
-    const token = androidApp.getFcmToken();
-    return token && token.length > 10 ? token : null;
+    try {
+      const token = androidApp.getFcmToken();
+      if (token && token.length > 10) return token;
+    } catch (e) {}
   }
+  const gonative = w.gonative || w.median;
+  if (gonative && typeof gonative.push?.fcm?.getToken === 'function') {
+    try {
+      const t = gonative.push.fcm.getToken();
+      if (t && t.length > 10) return t;
+    } catch (e) {}
+  }
+  const cached = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (cached && cached.length > 10) return cached;
   return null;
+}
+
+// Global Median.co / GoNative JS Bridge callbacks for automatic Android FCM push token registration
+if (typeof window !== 'undefined') {
+  const registerMedianToken = (token: string) => {
+    if (token && typeof token === 'string' && token.length > 10) {
+      console.log('[Median.co FCM Bridge] Received native Android FCM token:', token);
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      try {
+        const session = JSON.parse(localStorage.getItem('hss_auth_session_v1') || '{}');
+        const userUid = session.currentTeacher?.id || session.currentTeacher?.uid || session.currentAdmin?.id || 'guest';
+        const schoolCode = session.currentTeacher?.schoolCode || session.currentAdmin?.schoolCode || 'SSHSS@111213';
+        const userRole = session.role || 'teacher';
+        if (userUid && userUid !== 'guest') {
+          saveTokenToDatabase(token, userUid, schoolCode, userRole, 'android');
+        }
+      } catch (e) {}
+    }
+  };
+
+  (window as any).gonative_push_fcm_token = registerMedianToken;
+  (window as any).median_push_fcm_token = registerMedianToken;
+  (window as any).gonative_push_registered = function(info: any) {
+    const t = info?.token || info?.fcmToken || info?.registrationId;
+    if (t) registerMedianToken(t);
+  };
+  (window as any).median_push_registered = (window as any).gonative_push_registered;
 }
 
 /**
@@ -141,13 +195,16 @@ export async function requestAndSaveFCMToken(
 ): Promise<string | null> {
   if (typeof window === 'undefined') return null;
 
-  // 1. Check if running inside Android APK container
+  const targetUid = userUid || auth?.currentUser?.uid || 'guest';
+  const targetSchool = schoolCode || 'SSHSS@111213';
+
+  // 1. Check if running inside Android APK container / Median.co
   if (isRunningInAndroidApp()) {
     const androidToken = getAndroidNativeFCMToken();
     if (androidToken) {
       localStorage.setItem(TOKEN_STORAGE_KEY, androidToken);
-      if (userUid && schoolCode && database) {
-        await saveTokenToDatabase(androidToken, userUid, schoolCode, userRole, 'android');
+      if (targetUid !== 'guest') {
+        await saveTokenToDatabase(androidToken, targetUid, targetSchool, userRole, 'android');
       }
       return androidToken;
     }
@@ -201,30 +258,23 @@ export async function requestAndSaveFCMToken(
 
     if (VAPID_KEY_ENV) {
       tokenOptions.vapidKey = VAPID_KEY_ENV;
-    } else {
-      console.warn('[FCM] VITE_FIREBASE_VAPID_KEY is not configured in environment. Web Push requires a valid VAPID key.');
     }
 
     let token: string | null = null;
     try {
       token = await getToken(messaging, tokenOptions);
     } catch (tokenErr) {
-      console.warn('[FCM] Error obtaining FCM token with configured VAPID key:', tokenErr);
+      console.warn('[FCM] Error obtaining FCM token:', tokenErr);
     }
 
     if (token) {
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
 
-      const targetUid = userUid || auth?.currentUser?.uid || 'guest';
-      const targetSchool = schoolCode || 'SSHSS@111213';
-
-      if (database && targetUid !== 'guest') {
+      if (targetUid !== 'guest') {
         await saveTokenToDatabase(token, targetUid, targetSchool, userRole, 'web');
       }
 
-      // Setup foreground message listener
       setupForegroundMessageListener(messaging);
-
       return token;
     }
   } catch (err) {
@@ -235,7 +285,7 @@ export async function requestAndSaveFCMToken(
 }
 
 /**
- * Saves FCM token record to Firebase Realtime Database
+ * Saves FCM token record to Firebase Realtime Database AND Firestore
  */
 async function saveTokenToDatabase(
   token: string,
@@ -244,24 +294,44 @@ async function saveTokenToDatabase(
   userRole: string,
   platform: 'web' | 'android'
 ): Promise<void> {
-  if (!database || !token || !userUid) return;
+  if (!token || !userUid) return;
 
   try {
     const cleanSchoolCode = (schoolCode || 'SSHSS@111213').trim().toUpperCase();
     const tokenId = btoa(token).replace(/[/+=]/g, '_').substring(0, 32);
     const prefs = getNotificationPreferences();
+    const now = new Date().toISOString();
 
-    const tokenRef = ref(database, `fcm_tokens/${cleanSchoolCode}/${userUid}/${tokenId}`);
-    await set(tokenRef, {
+    const record = {
       token,
       platform,
       userUid,
       schoolCode: cleanSchoolCode,
       role: userRole,
       preferences: prefs,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'
-    });
+    };
+
+    if (database) {
+      const tokenRef = ref(database, `fcm_tokens/${cleanSchoolCode}/${userUid}/${tokenId}`);
+      await set(tokenRef, record).catch(() => {});
+
+      const schoolTokenRef = ref(database, `schools/${cleanSchoolCode}/tokens/${userUid}`);
+      await set(schoolTokenRef, record).catch(() => {});
+    }
+
+    if (firestore) {
+      try {
+        const fsTokenRef = fsDoc(firestore, 'fcm_tokens', cleanSchoolCode, userUid, tokenId);
+        await fsSetDoc(fsTokenRef, record, { merge: true });
+
+        const fsSchoolTokenRef = fsDoc(firestore, 'schools', cleanSchoolCode, 'tokens', userUid);
+        await fsSetDoc(fsSchoolTokenRef, record, { merge: true });
+      } catch (fsErr) {
+        console.warn('[FCM] Firestore token save warning:', fsErr);
+      }
+    }
   } catch (err) {
     console.warn('[FCM] Error recording token in database:', err);
   }
