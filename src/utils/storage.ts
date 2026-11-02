@@ -74,6 +74,66 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'hss_audit_logs_v1'
 };
 
+export interface ParsedDateOfBirth {
+  year: number;
+  month: number; // 0-indexed (0 = Jan, 11 = Dec)
+  day: number;
+  formattedYmd: string; // YYYY-MM-DD
+  displayStr: string;   // e.g. "15 May 1990"
+}
+
+export function parseDateOfBirth(dobStr?: string): ParsedDateOfBirth | null {
+  if (!dobStr || typeof dobStr !== 'string') return null;
+  const clean = dobStr.trim();
+  if (!clean || clean === '-' || clean === 'N/A' || clean === 'Not Specified') return null;
+
+  let y = 0;
+  let m = 0; // 1-12
+  let d = 0;
+
+  // Case 1: YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+  const ymdMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    y = parseInt(ymdMatch[1], 10);
+    m = parseInt(ymdMatch[2], 10);
+    d = parseInt(ymdMatch[3], 10);
+  } else {
+    // Case 2: DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+    const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (dmyMatch) {
+      d = parseInt(dmyMatch[1], 10);
+      m = parseInt(dmyMatch[2], 10);
+      y = parseInt(dmyMatch[3], 10);
+    } else {
+      // Case 3: Standard ISO / Date constructor parse
+      const parsed = new Date(clean);
+      if (!isNaN(parsed.getTime())) {
+        y = parsed.getFullYear();
+        m = parsed.getMonth() + 1;
+        d = parsed.getDate();
+      }
+    }
+  }
+
+  if (y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const dateObj = new Date(y, m - 1, d);
+    const displayStr = dateObj.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+    return {
+      year: y,
+      month: m - 1,
+      day: d,
+      formattedYmd: `${y}-${pad(m)}-${pad(d)}`,
+      displayStr
+    };
+  }
+  return null;
+}
+
 export const DEFAULT_PERIOD_TIMINGS: PeriodTimingConfig[] = [
   { periodNumber: 1, label: 'Period 1', startTime: '09:30 AM', endTime: '10:15 AM' },
   { periodNumber: 2, label: 'Period 2', startTime: '10:15 AM', endTime: '11:00 AM', isBreakAfter: true, breakLabel: 'Short Recess (10m)' },
@@ -1131,15 +1191,25 @@ export const StorageService = {
   },
 
   updateTeacherAccount(account: TeacherAccount): boolean {
-    if (account) {
-      if (this.isTeacherPermanentlyDeleted(account.id, account.email || account.gmail) || (account.uid && this.isTeacherPermanentlyDeleted(account.uid))) {
-        return false;
-      }
-      this.removeTemporarilyDeletedTeacherId(account.id, account.email || account.gmail);
-      if (account.uid) this.removeTemporarilyDeletedTeacherId(account.uid);
+    if (!account) return false;
+    if (this.isTeacherPermanentlyDeleted(account.id, account.email || account.gmail) || (account.uid && this.isTeacherPermanentlyDeleted(account.uid))) {
+      return false;
     }
+    this.removeTemporarilyDeletedTeacherId(account.id, account.email || account.gmail);
+    if (account.uid) this.removeTemporarilyDeletedTeacherId(account.uid);
+
     const accounts = this.getTeacherAccounts();
-    const idx = accounts.findIndex(a => a.id === account.id);
+    const cleanEmail = (account.email || account.gmail || '').trim().toLowerCase();
+    const cleanId = (account.id || '').trim();
+    const cleanUid = (account.uid || '').trim();
+
+    const idx = accounts.findIndex(a => 
+      (cleanId && a.id === cleanId) ||
+      (cleanUid && (a.uid === cleanUid || a.id === cleanUid)) ||
+      (cleanId && a.uid === cleanId) ||
+      (cleanEmail && ((a.email && a.email.toLowerCase() === cleanEmail) || (a.gmail && a.gmail.toLowerCase() === cleanEmail)))
+    );
+
     if (idx >= 0) {
       accounts[idx] = {
         ...accounts[idx],
@@ -1147,34 +1217,49 @@ export const StorageService = {
         status: 'active',
         lastActiveAt: new Date().toISOString()
       };
-      this.saveTeacherAccounts(accounts);
-
-      // Also sync current active teacher session if relevant
-      const session = this.getAuthSession();
-      if (session.currentTeacher && session.currentTeacher.id === account.id) {
-        session.currentTeacher = { ...accounts[idx] };
-        this.setAuthSession(session);
-      }
-
-      // Also sync with active TeacherInfo if relevant
-      const activeTeacher = this.getTeacherInfo();
-      if (activeTeacher.email === account.email || activeTeacher.phone === account.phone) {
-        this.saveTeacherInfo({
-          ...activeTeacher,
-          teacherName: account.name,
-          phone: account.phone,
-          email: account.email,
-          designation: account.designation,
-          avatar: account.avatar,
-          photoUrl: account.photoUrl,
-          dob: account.dob
-        });
-      }
-
-      notifyMutation();
-      return true;
+    } else {
+      accounts.push({
+        ...account,
+        status: 'active',
+        lastActiveAt: new Date().toISOString()
+      });
     }
-    return false;
+    this.saveTeacherAccounts(accounts);
+
+    const savedIdx = idx >= 0 ? idx : accounts.length - 1;
+
+    // Also sync current active teacher session if relevant
+    const session = this.getAuthSession();
+    if (session.currentTeacher && (
+      session.currentTeacher.id === account.id ||
+      (account.uid && session.currentTeacher.uid === account.uid) ||
+      (cleanEmail && (session.currentTeacher.email?.toLowerCase() === cleanEmail || session.currentTeacher.gmail?.toLowerCase() === cleanEmail))
+    )) {
+      session.currentTeacher = { ...accounts[savedIdx] };
+      this.setAuthSession(session);
+    }
+
+    // Also sync with active TeacherInfo if relevant
+    const activeTeacher = this.getTeacherInfo();
+    if (
+      activeTeacher.email === account.email ||
+      activeTeacher.phone === account.phone ||
+      (cleanEmail && activeTeacher.email?.toLowerCase() === cleanEmail)
+    ) {
+      this.saveTeacherInfo({
+        ...activeTeacher,
+        teacherName: account.name,
+        phone: account.phone,
+        email: account.email,
+        designation: account.designation,
+        avatar: account.avatar,
+        photoUrl: account.photoUrl,
+        dob: account.dob
+      });
+    }
+
+    notifyMutation();
+    return true;
   },
 
   deleteTeacherAccount(teacherId: string, isPermanent: boolean = false): boolean {
@@ -1390,7 +1475,10 @@ export const StorageService = {
   },
 
   // Upcoming Teacher Birthdays Calculator
-  getUpcomingTeacherBirthdays(schoolCode?: string, withinDays: number = 60): Array<{
+  getUpcomingTeacherBirthdays(
+    teachersOrSchoolCode?: string | TeacherAccount[],
+    withinDays: number = 60
+  ): Array<{
     teacher: TeacherAccount;
     nextBirthdayStr: string;
     daysRemaining: number;
@@ -1399,9 +1487,13 @@ export const StorageService = {
     age: number;
     displayDate: string;
   }> {
-    const teachers = this.getTeachersBySchoolCode(schoolCode);
+    const teachers: TeacherAccount[] = Array.isArray(teachersOrSchoolCode)
+      ? teachersOrSchoolCode
+      : this.getTeachersBySchoolCode(typeof teachersOrSchoolCode === 'string' ? teachersOrSchoolCode : '');
+
     const now = new Date();
     const currentYear = now.getFullYear();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const results: Array<{
       teacher: TeacherAccount;
       nextBirthdayStr: string;
@@ -1413,18 +1505,16 @@ export const StorageService = {
     }> = [];
 
     teachers.forEach(teacher => {
-      if (!teacher.dob) return;
-      const parts = teacher.dob.split('-');
-      if (parts.length !== 3) return;
+      if (!teacher || !teacher.dob) return;
+      const parsed = parseDateOfBirth(teacher.dob);
+      if (!parsed) return;
 
-      const birthYear = parseInt(parts[0], 10);
-      const birthMonth = parseInt(parts[1], 10) - 1; // 0-indexed
-      const birthDay = parseInt(parts[2], 10);
+      const birthYear = parsed.year;
+      const birthMonth = parsed.month;
+      const birthDay = parsed.day;
 
       // Birthday in current year
       let nextBirthday = new Date(currentYear, birthMonth, birthDay);
-      // Reset times to midnight for accurate day comparison
-      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       // If already passed earlier this year, use next year
       if (nextBirthday.getTime() < todayMidnight.getTime()) {
@@ -1437,7 +1527,7 @@ export const StorageService = {
       if (daysRemaining <= withinDays) {
         const isToday = daysRemaining === 0;
         const isThisWeek = daysRemaining > 0 && daysRemaining <= 7;
-        const age = nextBirthday.getFullYear() - birthYear;
+        let age = nextBirthday.getFullYear() - birthYear;
         const displayDate = nextBirthday.toLocaleDateString('en-IN', {
           month: 'short',
           day: 'numeric'

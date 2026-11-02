@@ -76,8 +76,8 @@ import {
   AuditLogItem,
   TeacherActivityItem
 } from '../types';
-import { StorageService, DEFAULT_PERIOD_TIMINGS, TIMETABLE_DAYS, registerStorageMutationListener } from '../utils/storage';
-import { db, database, ref, update, doc, setDoc, handleFirestoreError, OperationType, auth } from '../utils/firebase';
+import { StorageService, DEFAULT_PERIOD_TIMINGS, TIMETABLE_DAYS, registerStorageMutationListener, parseDateOfBirth } from '../utils/storage';
+import { db, database, ref, update, onValue, doc, setDoc, handleFirestoreError, OperationType, auth } from '../utils/firebase';
 import { CloudSync } from '../utils/cloudSync';
 import {
   generateSchoolAdminAuditPDF,
@@ -139,6 +139,7 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     photoUrl: ''
   });
   const [teacherFilterBirthday, setTeacherFilterBirthday] = useState<'all' | 'upcoming' | 'this-month'>('all');
+  const [isSavingTeacher, setIsSavingTeacher] = useState(false);
 
   // Real-time Firestore synchronization for Teachers, Classes, and Activity Stream
   const [remoteTeachers, setRemoteTeachers] = useState<TeacherAccount[]>([]);
@@ -347,6 +348,31 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
       setAuditLogs(logs);
     });
 
+    // 8. Subscribe to teacher signups in Realtime Database
+    let unsubSignups = () => {};
+    if (database) {
+      try {
+        const signupsRef = ref(database, 'teacherSignups');
+        unsubSignups = onValue(signupsRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const list: any[] = [];
+            snapshot.forEach(child => {
+              const val = child.val();
+              if (val) {
+                const sc = (val.schoolCode || '').trim().toUpperCase();
+                if (!sc || sc === activeSchoolCode.trim().toUpperCase()) {
+                  list.push({ ...val, id: child.key });
+                }
+              }
+            });
+            setTeacherSignups(list);
+          }
+        });
+      } catch (e) {
+        console.warn('Error subscribing to teacher signups in admin panel:', e);
+      }
+    }
+
     return () => {
       unsubTeachers();
       unsubClasses();
@@ -355,6 +381,7 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
       unsubTimetables();
       unsubProfile();
       unsubAuditLogs();
+      unsubSignups();
     };
   }, [activeSchoolCode]);
 
@@ -396,14 +423,14 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Load teachers for this school code (combining local storage and real-time remote Firebase database)
+  // Load teachers for this school code (combining local storage, real-time remote Firebase database, and teacher signups)
   const teachers = useMemo<TeacherAccount[]>(() => {
     const map = new Map<string, TeacherAccount>();
 
     // 1. Local storage teachers matching activeSchoolCode
     const localTeachers = StorageService.getTeacherAccounts() || [];
     localTeachers.forEach(lt => {
-      if (lt && lt.schoolCode && lt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+      if (lt && (!lt.schoolCode || lt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())) {
         const id = lt.uid || lt.id || lt.email;
         if (id) {
           map.set(id, {
@@ -420,16 +447,23 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
 
     // 2. Remote Firebase teachers
     (Array.isArray(remoteTeachers) ? remoteTeachers : []).forEach(rt => {
-      if (rt && rt.schoolCode && rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+      if (rt && (!rt.schoolCode || rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())) {
         const id = rt.uid || rt.id || rt.email;
         if (id) {
+          const existing = map.get(id);
           map.set(id, {
+            ...existing,
             ...rt,
             id,
             uid: rt.uid || rt.id,
-            email: rt.email || rt.gmail || '',
-            gmail: rt.gmail || rt.email || '',
-            subject: rt.subject || rt.primarySubject || rt.designation || 'General',
+            // CRITICAL: NEVER overwrite an existing DOB with an empty/undefined DOB
+            dob: rt.dob || existing?.dob || '',
+            phone: rt.phone || existing?.phone || '',
+            photoUrl: rt.photoUrl || existing?.photoUrl || '',
+            avatar: rt.avatar || existing?.avatar || '👨‍🏫',
+            email: rt.email || rt.gmail || existing?.email || '',
+            gmail: rt.gmail || rt.email || existing?.gmail || '',
+            subject: rt.subject || rt.primarySubject || existing?.subject || 'General',
             status: (rt.status as 'active' | 'inactive' | 'suspended') || 'active'
           });
         }
@@ -461,8 +495,31 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
       }
     });
 
+    // 4. Correlate with teacherSignups to enrich DOB & Phone if missing in teacher profile
+    (Array.isArray(teacherSignups) ? teacherSignups : []).forEach(ts => {
+      if (ts) {
+        const sEmail = (ts.email || '').trim().toLowerCase();
+        const sPhone = (ts.mobileNumber || '').trim();
+        const sDob = (ts.dateOfBirth || ts.dob || '').trim();
+        if (sDob || sPhone) {
+          for (const [key, t] of map.entries()) {
+            const tEmail = (t.email || t.gmail || '').trim().toLowerCase();
+            const tPhone = (t.phone || '').trim();
+            if ((sEmail && tEmail === sEmail) || (sPhone && tPhone === sPhone) || key === ts.id) {
+              if (!t.dob && sDob) {
+                t.dob = sDob;
+              }
+              if (!t.phone && sPhone) {
+                t.phone = sPhone;
+              }
+            }
+          }
+        }
+      }
+    });
+
     return Array.from(map.values());
-  }, [activeSchoolCode, remoteTeachers, remoteClasses]);
+  }, [activeSchoolCode, remoteTeachers, remoteClasses, teacherSignups, mutationCount]);
 
   // Load all classes in school - strictly calculates classes created by the teacher(s) for entering the app + any created after entering
   const classesList = useMemo(() => {

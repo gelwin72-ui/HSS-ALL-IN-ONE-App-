@@ -427,6 +427,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
               email: cleanEmail,
               gmail: cleanEmail,
               phone: signupPhone.trim(),
+              dob: signupDob.trim(),
               schoolName: signupSchool.trim(),
               schoolCode: cleanSchoolCode,
               academicYear: signupAcademicYear.trim(),
@@ -444,6 +445,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
               email: cleanEmail,
               gmail: cleanEmail,
               phone: signupPhone.trim(),
+              dob: signupDob.trim(),
               schoolName: signupSchool.trim(),
               schoolCode: cleanSchoolCode,
               academicYear: signupAcademicYear.trim(),
@@ -457,7 +459,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
             rtdbUpdates[`teacherSignups/${activeUid}`] = {
               fullName: signupName.trim(),
               email: cleanEmail,
-              dateOfBirth: signupDob,
+              dateOfBirth: signupDob.trim(),
+              dob: signupDob.trim(),
               mobileNumber: signupPhone.trim(),
               schoolOrCollegeName: signupSchool.trim(),
               schoolCode: cleanSchoolCode,
@@ -643,7 +646,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       }
 
       match.status = 'active';
-      match.password = '';
+      if (loginDob && (!match.dob || match.dob !== loginDob.trim())) {
+        match.dob = loginDob.trim();
+      }
       if (cleanSchoolCode) match.schoolCode = cleanSchoolCode;
       if (loginAcademicYear.trim()) match.academicYear = loginAcademicYear.trim();
       match.lastActiveAt = new Date().toISOString();
@@ -811,7 +816,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       match.id = effectiveUid;
       match.uid = effectiveUid;
       match.status = 'active';
-      match.password = '';
+      if (loginDob && (!match.dob || match.dob !== loginDob.trim())) {
+        match.dob = loginDob.trim();
+      }
       match.schoolCode = cleanSchoolCode;
       if (loginAcademicYear.trim()) {
         match.academicYear = loginAcademicYear.trim();

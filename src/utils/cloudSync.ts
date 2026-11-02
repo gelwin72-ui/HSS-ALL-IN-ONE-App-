@@ -1973,6 +1973,18 @@ class CloudSyncManager {
         // 2. Write to schools/{schoolCode}/teachers/{effectiveTeacherKey} for active Admin Panel list
         const schoolTeacherRef = ref(database, `schools/${cleanCode}/teachers/${effectiveTeacherKey}`);
         await update(schoolTeacherRef, sanitizedTeacherRecord);
+
+        // 3. Keep teacherSignups dateOfBirth in sync
+        const signupRecordRef = ref(database, `teacherSignups/${effectiveTeacherKey}`);
+        await update(signupRecordRef, {
+          fullName: teacher.name,
+          dateOfBirth: teacher.dob || '',
+          dob: teacher.dob || '',
+          subject: teacher.subject || '',
+          mobileNumber: teacher.phone || '',
+          schoolCode: cleanCode,
+          updatedAt: new Date().toISOString()
+        }).catch(() => {});
       } catch (err) {
         console.warn('Error saving teacher to RTDB:', err);
       }
@@ -3158,6 +3170,22 @@ class CloudSyncManager {
 
           const remoteTeachers = Array.from(map.values());
           const localTeachers = StorageService.getTeacherAccounts();
+          
+          // Preserve locally known dob, phone, or photoUrl if remote record is missing them
+          remoteTeachers.forEach(rt => {
+            const loc = localTeachers.find(lt => 
+              lt.id === rt.id ||
+              (rt.uid && (lt.uid === rt.uid || lt.id === rt.uid)) ||
+              (rt.email && ((lt.email && lt.email.toLowerCase() === rt.email.toLowerCase()) || (lt.gmail && lt.gmail.toLowerCase() === rt.email.toLowerCase())))
+            );
+            if (loc) {
+              if (!rt.dob && loc.dob) rt.dob = loc.dob;
+              if (!rt.phone && loc.phone) rt.phone = loc.phone;
+              if (!rt.photoUrl && loc.photoUrl) rt.photoUrl = loc.photoUrl;
+              if (!rt.avatar && loc.avatar) rt.avatar = loc.avatar;
+            }
+          });
+
           const otherSchoolTeachers = localTeachers.filter(lt => (lt.schoolCode || '').trim().toUpperCase() !== cleanCode);
           const updatedLocalTeachers = [...otherSchoolTeachers, ...remoteTeachers];
           StorageService.saveTeacherAccounts(updatedLocalTeachers);
