@@ -3,33 +3,22 @@
     "schools": {
       "$schoolCode": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null",
+        "teachers": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "classes": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "schoolProfile": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
       }
     },
     "users": {
-      "$userId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "email_accounts": {
-      "$emailKey": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "broadcasts": {
-      "$broadcastId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "unauthorizedAttempts": {
-      ".read": "auth != null",
-      ".write": "true"
-    },
-    "teacherSignups": {
-      ".read": "auth != null",
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid"
@@ -38,6 +27,54 @@
     "teachers": {
       ".read": "auth != null",
       ".write": "auth != null"
+    },
+    "email_accounts": {
+      "$emailKey": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "broadcasts": {
+       ".read": "auth != null",
+       ".write": "auth != null"
+    },
+    "fcm_tokens": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "notification_preferences": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "unauthorizedAttempts": {
+      ".read": false,
+      ".write": true
+    },
+    "teacherSignups": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "schoolAdmins": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "gmail": {
+      "$safeKey": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "cloud_files": {
+      "$fileId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }

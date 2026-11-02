@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand Primary Colors matching HSS ALL IN ONE Design -->
+    <color name="primary">#1E3A8A</color>
+    <color name="primary_dark">#172554</color>
+    <color name="primary_light">#3B82F6</color>
+    <color name="accent">#F59E0B</color>
+    
+    <!-- Neutral Colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="background_light">#F8FAFC</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="border_color">#E2E8F0</color>
+    
+    <!-- Status & Alerts -->
+    <color name="status_bar">#1E3A8A</color>
+    <color name="splash_bg">#FFFFFF</color>
+    <color name="error_red">#EF4444</color>
+    <color name="success_green">#10B981</color>
+</resources>

@@ -77,7 +77,7 @@ import {
   TeacherActivityItem
 } from '../types';
 import { StorageService, DEFAULT_PERIOD_TIMINGS, TIMETABLE_DAYS, registerStorageMutationListener } from '../utils/storage';
-import { db, database, ref, update, doc, setDoc, handleFirestoreError, OperationType } from '../utils/firebase';
+import { db, database, ref, update, doc, setDoc, handleFirestoreError, OperationType, auth } from '../utils/firebase';
 import { CloudSync } from '../utils/cloudSync';
 import {
   generateSchoolAdminAuditPDF,
@@ -85,6 +85,7 @@ import {
   generateSchoolAdminTeachersPDF,
   shareOrDownloadPDF
 } from '../utils/pdfGenerator';
+import { sendSchoolNotification } from '../utils/fcm';
 
 interface SchoolAdminDashboardScreenProps {
   admin: SchoolAdminAccount;
@@ -376,28 +377,91 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     setAuditLogs(StorageService.getAuditLogs(activeSchoolCode));
   };
 
+  const handleManualSync = async () => {
+    if (auth.currentUser) {
+      showToast('Synchronizing with Cloud...');
+      const res = await CloudSync.forceFetchFromCloud(auth.currentUser);
+      if (res.found) {
+        showToast('Synchronized successfully!');
+        triggerRefresh();
+      } else {
+        showToast('Sync complete (no new data found).');
+      }
+    }
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Load teachers for this school code (production Firebase Realtime Database is authoritative source of truth)
+  // Load teachers for this school code (combining local storage and real-time remote Firebase database)
   const teachers = useMemo<TeacherAccount[]>(() => {
-    // Only use remote Firebase data as the authoritative source of truth.
-    // listenToSchoolTeachers automatically filters out permanently and temporarily deleted teachers.
-    return (remoteTeachers || [])
-      .filter(rt => rt && rt.schoolCode && rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())
-      .map(rt => ({
-        ...rt,
-        id: rt.uid || rt.id,
-        uid: rt.uid || rt.id,
-        email: rt.email || rt.gmail || '',
-        gmail: rt.gmail || rt.email || '',
-        password: '',
-        subject: rt.subject || rt.primarySubject || rt.designation || 'General',
-        status: (rt.status as 'active' | 'inactive' | 'suspended') || 'active'
-      }));
-  }, [activeSchoolCode, remoteTeachers]);
+    const map = new Map<string, TeacherAccount>();
+
+    // 1. Local storage teachers matching activeSchoolCode
+    const localTeachers = StorageService.getTeacherAccounts() || [];
+    localTeachers.forEach(lt => {
+      if (lt && lt.schoolCode && lt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+        const id = lt.uid || lt.id || lt.email;
+        if (id) {
+          map.set(id, {
+            ...lt,
+            id,
+            uid: lt.uid || lt.id,
+            email: lt.email || lt.gmail || '',
+            gmail: lt.gmail || lt.email || '',
+            status: (lt.status as 'active' | 'inactive' | 'suspended') || 'active'
+          });
+        }
+      }
+    });
+
+    // 2. Remote Firebase teachers
+    (Array.isArray(remoteTeachers) ? remoteTeachers : []).forEach(rt => {
+      if (rt && rt.schoolCode && rt.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase()) {
+        const id = rt.uid || rt.id || rt.email;
+        if (id) {
+          map.set(id, {
+            ...rt,
+            id,
+            uid: rt.uid || rt.id,
+            email: rt.email || rt.gmail || '',
+            gmail: rt.gmail || rt.email || '',
+            subject: rt.subject || rt.primarySubject || rt.designation || 'General',
+            status: (rt.status as 'active' | 'inactive' | 'suspended') || 'active'
+          });
+        }
+      }
+    });
+
+    // 3. Extract teacher profiles directly from synced class records if missing in teachers collection
+    (Array.isArray(remoteClasses) ? remoteClasses : []).forEach(rc => {
+      if (rc && (rc.teacherName || rc.createdByTeacherEmail) && (!rc.schoolCode || rc.schoolCode.trim().toUpperCase() === activeSchoolCode.trim().toUpperCase())) {
+        const tId = rc.teacherUid || rc.teacherId || rc.createdByTeacherId || rc.createdByTeacherEmail;
+        const tEmail = (rc.createdByTeacherEmail || '').trim().toLowerCase();
+        if (tId && !map.has(tId)) {
+          map.set(tId, {
+            id: tId,
+            uid: tId,
+            name: rc.teacherName || 'Teacher',
+            email: tEmail,
+            gmail: tEmail,
+            phone: '',
+            schoolCode: activeSchoolCode,
+            schoolName: "St. Sebastian's Higher Secondary School",
+            subject: rc.stream || 'General',
+            assignedClass: rc.className,
+            designation: 'Class Teacher',
+            status: 'active',
+            createdAt: rc.createdAt || new Date().toISOString()
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }, [activeSchoolCode, remoteTeachers, remoteClasses]);
 
   // Load all classes in school - strictly calculates classes created by the teacher(s) for entering the app + any created after entering
   const classesList = useMemo(() => {
@@ -904,23 +968,36 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     try {
       const docRef = doc(db, 'broadcasts', newBroadcast.id);
       await setDoc(docRef, newBroadcast);
-      fetch('/api/send-fcm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schoolCode: newBroadcast.schoolCode,
-          title: newBroadcast.title,
-          body: newBroadcast.message,
-          targetAudience: newBroadcast.targetAudience
-        })
+
+      const catMap: Record<string, any> = {
+        holiday: 'holidays',
+        exam: 'exams',
+        meeting: 'notices',
+        administrative: 'notices',
+        academic: 'notices',
+        general: 'notices'
+      };
+      const fcmCategory = catMap[newBroadcast.category] || 'notices';
+
+      sendSchoolNotification({
+        schoolCode: newBroadcast.schoolCode,
+        title: newBroadcast.title,
+        body: newBroadcast.message,
+        category: fcmCategory,
+        targetAudience: newBroadcast.targetAudience
       }).catch(() => {});
+      showToast('Broadcast directive sent and synchronized with Cloud!');
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `broadcasts/${newBroadcast.id}`);
+      try {
+        handleFirestoreError(err, OperationType.WRITE, `broadcasts/${newBroadcast.id}`);
+      } catch (logErr) {
+        console.warn('Firestore write warning:', logErr);
+      }
+      showToast('Broadcast saved locally (cloud sync will retry when online)');
     }
 
     setBroadcastTitle('');
     setBroadcastMessage('');
-    showToast('Broadcast directive sent and synchronized with Cloud!');
     triggerRefresh();
   };
 
@@ -953,8 +1030,22 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
     try {
       const docRef = doc(db, 'broadcasts', bdayBroadcast.id);
       await setDoc(docRef, bdayBroadcast);
+
+      sendSchoolNotification({
+        schoolCode: admin.schoolCode,
+        title: `🎂 Birthday Wishes to ${teacher.name}!`,
+        body: greetingMessage,
+        category: 'messages',
+        targetAudience: 'All Teachers'
+      }).catch(() => {});
+      showToast(`Birthday wishes sent to ${teacher.name}!`);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `broadcasts/${bdayBroadcast.id}`);
+      try {
+        handleFirestoreError(err, OperationType.WRITE, `broadcasts/${bdayBroadcast.id}`);
+      } catch (logErr) {
+        console.warn('Firestore write warning:', logErr);
+      }
+      showToast(`Birthday greeting recorded locally for ${teacher.name}.`);
     }
 
     // Try Web Notification if supported
@@ -1533,6 +1624,16 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
           <div className="flex items-center gap-2.5">
             <button
               type="button"
+              id="btn-manual-sync"
+              onClick={handleManualSync}
+              className="px-3.5 py-2 rounded-xl bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">Sync Data</span>
+            </button>
+
+            <button
+              type="button"
               id="btn-print-school-report"
               onClick={() => setShowPrintModal(true)}
               className="px-3.5 py-2 rounded-xl bg-[#2D3139] hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
@@ -1789,7 +1890,7 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
             }`}
           >
             <Users className="w-4 h-4 text-amber-300" />
-            <span>Teachers Information ({teachers.length})</span>
+            <span>Registered Teachers ({teachers.length})</span>
           </button>
 
           <button
@@ -1931,10 +2032,10 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
                     <Users className="w-5 h-5 text-amber-400" />
-                    <span>Teachers Information & Faculty Roster</span>
+                    <span>Registered Teachers ({teachers.length})</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    View, register, and update teacher profiles, profile photos, assigned classrooms, and birthday information for school code <strong className="text-amber-400 font-mono">{activeSchoolCode}</strong>.
+                    Real-time monitoring of teachers registered under School Code <strong className="text-amber-400 font-mono">{activeSchoolCode}</strong>.
                   </p>
                 </div>
 
@@ -2155,11 +2256,41 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
 
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <Hash className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                            Profile ID
+                          </span>
+                          <span className="text-purple-300 font-mono text-[10px] truncate" title={teacher.id || teacher.uid}>
+                            {teacher.id || teacher.uid}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <School className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            School Code
+                          </span>
+                          <span className="text-amber-400 font-mono font-bold text-[11px]">
+                            {teacher.schoolCode || activeSchoolCode}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            Date Registered
+                            Registered On
                           </span>
                           <span className="text-slate-300 font-mono text-[11px]">
-                            {teacher.createdAt ? new Date(teacher.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Active'}
+                            {teacher.createdAt ? new Date(teacher.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Active'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            Last Login
+                          </span>
+                          <span className="text-slate-300 font-mono text-[11px]">
+                            {teacher.lastActiveAt || teacher.lastLoginAt ? new Date(teacher.lastActiveAt || teacher.lastLoginAt!).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Just Now'}
                           </span>
                         </div>
 

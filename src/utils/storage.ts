@@ -37,13 +37,20 @@ export const registerStorageMutationListener = (cb: () => void) => {
 
 const notifyMutation = () => {
   if (isMutationSilenced) return;
-  storageMutationListeners.forEach(cb => {
-    try {
-      cb();
-    } catch (e) {
-      console.warn('Storage mutation callback failed', e);
-    }
-  });
+  const dispatch = () => {
+    storageMutationListeners.forEach(cb => {
+      try {
+        cb();
+      } catch (e) {
+        console.warn('Storage mutation callback failed', e);
+      }
+    });
+  };
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(dispatch);
+  } else {
+    setTimeout(dispatch, 0);
+  }
 };
 
 const STORAGE_KEYS = {
@@ -160,17 +167,19 @@ export const StorageService = {
   init() {
     try {
       const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-      const demoCleaned = localStorage.getItem('hss_demo_data_purged_v1');
+      const demoCleanedV2 = localStorage.getItem('hss_demo_data_purged_v2');
 
-      if (!demoCleaned) {
-        // Purge old demo/dummy data from local storage
+      if (!demoCleanedV2) {
+        // Purge old demo/dummy data and teacher accounts from local storage
         const currentTeachers = this.getTeacherAccounts();
         const cleanedTeachers = currentTeachers.filter(t => 
           t && t.email && 
           t.email.toLowerCase() !== 'teacher@gmail.com' && 
           t.email.toLowerCase() !== 'ddjmann@gmail.com' &&
           t.id !== 'teacher-1789232615710' &&
-          t.name !== 'Fff'
+          t.name !== 'Fff' &&
+          !t.name?.toLowerCase().includes('demo') &&
+          !t.email?.toLowerCase().includes('example.com')
         );
         this.saveTeacherAccounts(cleanedTeachers);
 
@@ -179,7 +188,8 @@ export const StorageService = {
         if (session.currentTeacher && (
           session.currentTeacher.email === 'ddjmann@gmail.com' ||
           session.currentTeacher.id === 'teacher-1789232615710' ||
-          session.currentTeacher.name === 'Fff'
+          session.currentTeacher.name === 'Fff' ||
+          session.currentTeacher.email?.toLowerCase().includes('example.com')
         )) {
           this.setAuthSession({
             isLoggedIn: false,
@@ -193,13 +203,14 @@ export const StorageService = {
         const currentClasses = this.getClassesList();
         const cleanedClasses = currentClasses.filter(c => 
           c && c.createdByTeacherEmail !== 'ddjmann@gmail.com' &&
-          c.teacherName !== 'Fff'
+          c.teacherName !== 'Fff' &&
+          !c.className?.toLowerCase().includes('demo')
         );
         if (cleanedClasses.length !== currentClasses.length) {
           this.saveClassesList(cleanedClasses);
         }
 
-        localStorage.setItem('hss_demo_data_purged_v1', 'true');
+        localStorage.setItem('hss_demo_data_purged_v2', 'true');
       }
 
       if (!initialized) {
@@ -213,6 +224,7 @@ export const StorageService = {
         this.saveReminders([]);
         this.saveSettings(DEFAULT_SETTINGS);
         this.saveClassesList([]);
+        this.saveTimetables([]);
         localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
       }
     } catch (e) {
@@ -225,30 +237,12 @@ export const StorageService = {
       const val = localStorage.getItem(STORAGE_KEYS.SCHOOL_PROFILE);
       if (val) {
         const parsed = JSON.parse(val);
-        const storedName = parsed.schoolName;
-        const isObsoleteName = !storedName ||
-          storedName.toLowerCase().includes('sebast') ||
-          storedName === 'Govt. Model HSS' ||
-          storedName === 'Govt Higher Secondary School' ||
-          storedName === 'School Name' ||
-          storedName === 'HIGHER SECONDARY SCHOOL';
-        const normalizedName = isObsoleteName
-          ? "St.Sebastian's Higher Secondary School"
-          : storedName;
-        const storedPrincipal = parsed.principalName;
-        const normalizedPrincipal = (!storedPrincipal || storedPrincipal.trim() === 'School Administrator' || storedPrincipal.trim() === 'Principal / School Administrator')
-          ? 'Principal'
-          : (storedPrincipal.trim() || 'Principal');
-        const storedCode = parsed.schoolCode;
-        const normalizedCode = (storedCode && storedCode.trim() && storedCode !== 'HSS-07142' && storedCode !== 'HSS-KL' && storedCode !== 'School Code')
-          ? storedCode.trim().toUpperCase()
-          : 'SSHSS@111213';
         return {
           ...DEFAULT_SCHOOL_PROFILE,
           ...parsed,
-          schoolName: normalizedName,
-          schoolCode: normalizedCode,
-          principalName: normalizedPrincipal
+          schoolName: (parsed.schoolName && parsed.schoolName.trim()) ? parsed.schoolName.trim() : DEFAULT_SCHOOL_PROFILE.schoolName,
+          schoolCode: (parsed.schoolCode && parsed.schoolCode.trim()) ? parsed.schoolCode.trim().toUpperCase() : DEFAULT_SCHOOL_PROFILE.schoolCode,
+          principalName: (parsed.principalName && parsed.principalName.trim()) ? parsed.principalName.trim() : DEFAULT_SCHOOL_PROFILE.principalName
         };
       }
       return DEFAULT_SCHOOL_PROFILE;
@@ -291,35 +285,52 @@ export const StorageService = {
     notifyMutation();
   },
 
-  getClassesByTeacher(teacherIdOrUid?: string, teacherEmail?: string): ClassItem[] {
+  getClassesByTeacher(teacherIdOrUid?: string, teacherEmail?: string, teacherAccount?: TeacherAccount | null): ClassItem[] {
     const classes = this.getClassesList();
-    if (!teacherIdOrUid && !teacherEmail) {
-      const session = this.getAuthSession();
-      if (session.currentTeacher) {
-        teacherIdOrUid = session.currentTeacher.id || session.currentTeacher.uid;
-        teacherEmail = session.currentTeacher.email || session.currentTeacher.gmail;
-      }
-    }
-    const cleanUid = (teacherIdOrUid || '').trim();
-    const cleanEmail = (teacherEmail || '').trim().toLowerCase();
+    const session = this.getAuthSession();
+    const teacher = teacherAccount || session.currentTeacher;
 
-    if (!cleanUid && !cleanEmail) return classes;
+    const cleanUid = (teacherIdOrUid || teacher?.id || teacher?.uid || '').trim();
+    const cleanEmail = (teacherEmail || teacher?.email || teacher?.gmail || '').trim().toLowerCase();
+    const teacherClassId = (teacher?.teacherClassId || '').trim();
+    const assignedClass = (teacher?.assignedClass || '').trim().toLowerCase();
+    const teacherName = (teacher?.name || '').trim().toLowerCase();
+    const teacherSchool = (teacher?.schoolCode || '').trim().toUpperCase();
 
-    return classes.filter(c => {
-      if (cleanUid && (c.teacherId === cleanUid || c.teacherUid === cleanUid || c.createdByTeacherId === cleanUid)) {
+    if (!cleanUid && !cleanEmail && !teacherClassId && !assignedClass) return classes;
+
+    const matched = classes.filter(c => {
+      if (!c) return false;
+      const cId = (c.id || '').trim();
+      if (teacherClassId && cId === teacherClassId) return true;
+
+      const cUid = (c.teacherId || c.teacherUid || c.createdByTeacherId || '').trim();
+      if (cleanUid && cUid === cleanUid) return true;
+
+      const cEmail = (c.createdByTeacherEmail || '').trim().toLowerCase();
+      if (cleanEmail && cEmail === cleanEmail) return true;
+
+      const cName = (c.teacherName || '').trim().toLowerCase();
+      const cSchool = (c.schoolCode || '').trim().toUpperCase();
+      const cClassName = (c.className || '').trim().toLowerCase();
+
+      if (assignedClass && cClassName === assignedClass && (!teacherSchool || !cSchool || teacherSchool === cSchool)) {
         return true;
       }
-      if (cleanEmail && c.createdByTeacherEmail && c.createdByTeacherEmail.trim().toLowerCase() === cleanEmail) {
+      if (teacherName && cName === teacherName && (!teacherSchool || !cSchool || teacherSchool === cSchool)) {
         return true;
       }
       return false;
     });
+
+    // Sort by createdAt ascending (the original first-created classroom is first)
+    return matched.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
   },
 
-  getActiveClassId(forTeacherUid?: string, forTeacherEmail?: string): string {
+  getActiveClassId(forTeacherUid?: string, forTeacherEmail?: string, teacherAccount?: TeacherAccount | null): string {
     try {
       const session = this.getAuthSession();
-      const teacher = session.currentTeacher;
+      const teacher = teacherAccount || session.currentTeacher;
       const targetUid = forTeacherUid || teacher?.id || teacher?.uid || '';
       const targetEmail = (forTeacherEmail || teacher?.email || teacher?.gmail || '').trim().toLowerCase();
 
@@ -328,15 +339,15 @@ export const StorageService = {
 
       const currentActiveId = localStorage.getItem(STORAGE_KEYS.ACTIVE_CLASS_ID);
 
-      // If a teacher is active/specified, ensure active class belongs to this teacher
-      if (targetUid || targetEmail) {
-        const teacherClasses = this.getClassesByTeacher(targetUid, targetEmail);
+      // If a teacher is active/specified, ensure active class belongs to this teacher's original/created classes
+      if (targetUid || targetEmail || teacher) {
+        const teacherClasses = this.getClassesByTeacher(targetUid, targetEmail, teacher);
         if (teacherClasses.length > 0) {
           const matched = teacherClasses.find(c => c.id === currentActiveId);
           if (matched) {
             return matched.id;
           }
-          // Default to this teacher's primary/first created class
+          // Default to this teacher's original (first created) class
           const preferred = teacherClasses[0];
           this.setActiveClassId(preferred.id);
           return preferred.id;
@@ -1590,7 +1601,7 @@ export const StorageService = {
 
   generateTeacherStandardTimetable(teacher: TeacherAccount, assignedClass?: string, primarySubject?: string): TimetableSlot[] {
     const slots = this.getTimetables(teacher.schoolCode);
-    const targetClass = assignedClass || teacher.assignedClass || 'Class 12 Science A';
+    const targetClass = assignedClass || teacher.assignedClass || this.getClassById(this.getActiveClassId(teacher.id, teacher.email, teacher))?.className || 'Classroom';
     const cleanSubject = primarySubject || teacher.primarySubject || (teacher.designation?.includes('Physics') ? 'Physics' : teacher.designation?.includes('Computer') ? 'Computer Science' : 'General Higher Secondary');
     const days: TimetableDay[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
