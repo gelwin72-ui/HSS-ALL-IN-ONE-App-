@@ -29,41 +29,54 @@ service cloud.firestore {
       return getUserDoc().data;
     }
 
+    // Pre-authorized school admins
+    function isPreAuthorizedAdmin() {
+      return isSignedIn() &&
+             request.auth.token != null &&
+             request.auth.token.email != null &&
+             (
+               request.auth.token.email.toLowerCase() == 'gelwin72@gmail.com' ||
+               request.auth.token.email.toLowerCase() == 'joicegeorge1910@gmail.com'
+             );
+    }
+
     // Check if the current authenticated user is an active School Admin for the given schoolCode
     function isSchoolAdmin(targetSchoolCode) {
       return isSignedIn() &&
-             userExists() &&
-             (getUserData().role == 'SCHOOL_ADMIN' || getUserData().role == 'admin') &&
-             getUserData().active == true &&
-             (targetSchoolCode == '' || getUserData().schoolCode == targetSchoolCode);
+             (
+               isPreAuthorizedAdmin() ||
+               (
+                 userExists() &&
+                 (getUserData().role == 'SCHOOL_ADMIN' || getUserData().role == 'admin') &&
+                 (targetSchoolCode == '' || getUserData().schoolCode == targetSchoolCode)
+               )
+             );
     }
 
     // Check if the user belongs to the specified schoolCode
     function isMemberOfSchool(targetSchoolCode) {
       return isSignedIn() &&
-             userExists() &&
-             (getUserData().schoolCode == targetSchoolCode || isSchoolAdmin(targetSchoolCode));
+             (
+               isSchoolAdmin(targetSchoolCode) ||
+               (userExists() && getUserData().schoolCode == targetSchoolCode)
+             );
     }
 
     // 1. Users Collection (Keyed by Firebase Authentication UID or email)
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
 
       match /{allSubcollections=**} {
-        allow read, write: if true;
+        allow read, write: if isSignedIn();
       }
     }
 
     // 2. School-Specific Multi-Tenant Data (Isolated by schoolCode)
     match /schools/{schoolCode} {
-      allow read: if isMemberOfSchool(schoolCode);
-      allow write: if isSchoolAdmin(schoolCode);
+      allow read, write: if isSignedIn();
 
       match /teachers/{teacherId} {
-        allow get, list: if isSignedIn() && (isOwner(teacherId) || isMemberOfSchool(schoolCode));
-        allow create: if isSignedIn() && (isOwner(teacherId) || isSchoolAdmin(schoolCode));
-        allow update: if isSignedIn() && (isOwner(teacherId) || isSchoolAdmin(schoolCode));
-        allow delete: if isSchoolAdmin(schoolCode);
+        allow read, write: if isSignedIn();
       }
 
       match /activities/{activityId} {
