@@ -2294,7 +2294,6 @@ class CloudSyncManager {
         const tEmail = (t.email || t.gmail || '').trim().toLowerCase();
 
         if (
-          StorageService.isTeacherPermanentlyDeleted(tId, tEmail) ||
           permDeletedIds.includes(tId) ||
           (tEmail && permDeletedIds.includes(tEmail)) ||
           (t as any).status === 'deleted' ||
@@ -3073,9 +3072,13 @@ class CloudSyncManager {
               const key = t.uid || t.id || t.email || t.gmail;
               if (!key) return;
 
-              // Ensure temporary deletion flags in local storage are cleared for this active teacher
+              // Ensure temporary and permanent deletion flags in local storage are cleared for active cloud teachers
               StorageService.removeTemporarilyDeletedTeacherId(t.id, t.email || t.gmail);
-              if (t.uid) StorageService.removeTemporarilyDeletedTeacherId(t.uid);
+              StorageService.removePermanentlyDeletedTeacherId(t.id, t.email || t.gmail);
+              if (t.uid) {
+                StorageService.removeTemporarilyDeletedTeacherId(t.uid);
+                StorageService.removePermanentlyDeletedTeacherId(t.uid);
+              }
 
               map.set(key, {
                 ...t,
@@ -3137,10 +3140,47 @@ class CloudSyncManager {
       console.warn('Could not establish real-time school teachers listener:', e);
     }
 
+    let unsubFs: (() => void) | null = null;
+    if (firestore) {
+      try {
+        const fsColRef = fsCollection(firestore, `schools/${cleanCode}/teachers`);
+        unsubFs = fsOnSnapshot(fsColRef, (snapshot: any) => {
+          if (snapshot && !snapshot.empty) {
+            const fsTeachersList: TeacherAccount[] = [];
+            snapshot.forEach((d: any) => {
+              const val = d.data();
+              if (val && !val.temporarilyDeleted && !val.permanentlyDeleted && val.status !== 'deleted' && val.status !== 'temporary_deleted') {
+                const idKey = val.uid || val.id || d.id;
+                StorageService.removeTemporarilyDeletedTeacherId(idKey, val.email || val.gmail);
+                StorageService.removePermanentlyDeletedTeacherId(idKey, val.email || val.gmail);
+                fsTeachersList.push({
+                  ...val,
+                  id: idKey,
+                  uid: idKey,
+                  email: val.email || val.gmail || '',
+                  gmail: val.gmail || val.email || '',
+                  schoolCode: cleanCode,
+                  status: 'active'
+                });
+              }
+            });
+            if (fsTeachersList.length > 0) {
+              onTeachersUpdated(fsTeachersList);
+            }
+          }
+        }, (fsErr: any) => {
+          console.warn('Firestore real-time teachers listener note:', fsErr);
+        });
+      } catch (e) {}
+    }
+
     return () => {
       if (this.unsubscribeSchoolTeachersSnapshot) {
         this.unsubscribeSchoolTeachersSnapshot();
         this.unsubscribeSchoolTeachersSnapshot = null;
+      }
+      if (unsubFs) {
+        unsubFs();
       }
     };
   }
