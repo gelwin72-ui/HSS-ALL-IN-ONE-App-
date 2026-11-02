@@ -956,7 +956,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
     try {
       const PRE_AUTHORIZED_EMAILS = new Set([
         'gelwin72@gmail.com',
-        'joicegeorge1910@gmail.com'
+        'joicegeorge1910@gmail.com',
+        'lincythomas1911@gmail.com'
       ]);
 
       if (!PRE_AUTHORIZED_EMAILS.has(cleanGmail)) {
@@ -1154,8 +1155,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       <div className="w-full max-w-xl z-10 space-y-5 animate-fade-in">
         {/* App Logo & Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-gradient-to-tr from-purple-700 via-purple-600 to-indigo-600 shadow-2xl shadow-purple-600/40 ring-4 ring-purple-500/20 mb-1">
-            <GraduationCap className="w-9 h-9 sm:w-10 sm:h-10 text-white" />
+          <div className="inline-flex items-center justify-center p-2 rounded-3xl bg-[#1A1C23] shadow-2xl shadow-purple-600/20 ring-4 ring-purple-500/10 mb-1 overflow-hidden w-20 h-20">
+            <img 
+              src="/logo.png" 
+              alt="Logo" 
+              className="w-full h-full object-contain p-1"
+            />
           </div>
 
           <div className="flex items-center justify-center gap-2">

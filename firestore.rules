@@ -36,7 +36,8 @@ service cloud.firestore {
              request.auth.token.email != null &&
              (
                request.auth.token.email.toLowerCase() == 'gelwin72@gmail.com' ||
-               request.auth.token.email.toLowerCase() == 'joicegeorge1910@gmail.com'
+               request.auth.token.email.toLowerCase() == 'joicegeorge1910@gmail.com' ||
+               request.auth.token.email.toLowerCase() == 'lincythomas1911@gmail.com'
              );
     }
 

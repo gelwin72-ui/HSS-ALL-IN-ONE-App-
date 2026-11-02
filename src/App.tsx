@@ -344,6 +344,8 @@ export function App() {
     logoutOneSignalUser().catch(() => {});
     try {
       await signOut(auth);
+      // Clear localStorage session to ensure fresh start
+      localStorage.removeItem('hss_auth_session_v1');
     } catch (e) {
       console.warn('Firebase signout error', e);
     }

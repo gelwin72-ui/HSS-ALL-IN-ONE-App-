@@ -136,6 +136,13 @@ class CloudSyncManager {
       setTimeout(() => this.flushPendingOfflineSync(), 1500);
     }
 
+    // Real-time Storage to Cloud Hook: Automatically trigger sync whenever local data is modified
+    registerStorageMutationListener(() => {
+      if (!this.isApplyingRemoteUpdate) {
+        this.scheduleAutoSync();
+      }
+    });
+
     // Initialize BroadcastChannel for 0ms same-origin multi-tab instant synthesis
     if (typeof BroadcastChannel !== 'undefined') {
       try {

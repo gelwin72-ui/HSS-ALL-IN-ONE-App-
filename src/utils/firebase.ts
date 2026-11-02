@@ -343,7 +343,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Database Error: ', JSON.stringify(errInfo));
+  console.error('Firebase PERMISSION_DENIED or other error: ', JSON.stringify(errInfo));
+  // Keep the throw to allow the application to handle the error, but log it clearly first.
   throw new Error(JSON.stringify(errInfo));
 }
 

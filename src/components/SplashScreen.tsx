@@ -39,8 +39,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       {/* Center Logo & Brand */}
       <div className="flex flex-col items-center text-center z-10 my-auto">
         <div className="relative mb-6">
-          <div className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-purple-700 via-purple-600 to-indigo-500 flex items-center justify-center shadow-2xl shadow-purple-600/40 ring-4 ring-purple-500/20 animate-pulse">
-            <GraduationCap className="w-12 h-12 text-white" />
+          <div className="w-24 h-24 rounded-3xl bg-[#1A1C23] flex items-center justify-center shadow-2xl shadow-purple-600/20 ring-4 ring-purple-500/10 overflow-hidden">
+            <img 
+              src="/logo.png" 
+              alt="HSS ALL IN ONE Logo" 
+              className="w-full h-full object-contain p-2"
+            />
           </div>
           <div className="absolute -bottom-2 -right-2 w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-lg border-2 border-[#0F1115]">
             <Award className="w-5 h-5" />

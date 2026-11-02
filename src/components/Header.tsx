@@ -157,9 +157,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3.5 min-w-0">
             <div
               onClick={onNavigateHome}
-              className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-950/40 shrink-0 ring-1 ring-purple-400/30 cursor-pointer hover:scale-105 transition"
+              className="w-10 h-10 rounded-xl bg-[#1A1C23] flex items-center justify-center shadow-lg shadow-purple-950/40 shrink-0 ring-1 ring-purple-400/20 cursor-pointer hover:scale-105 transition overflow-hidden"
             >
-              <School className="w-5 h-5" />
+              <img 
+                src="/logo.png" 
+                alt="Logo" 
+                className="w-full h-full object-contain p-1"
+              />
             </div>
 
             <div className="min-w-0" id="header-school-brand-details">
