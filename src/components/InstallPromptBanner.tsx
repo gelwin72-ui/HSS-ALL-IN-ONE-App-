@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, X, Share, PlusSquare, Smartphone, CheckCircle } from 'lucide-react';
+import appLogo from '../assets/images/app_logo.png';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -115,17 +116,16 @@ export function InstallPromptBanner() {
         <div className="flex items-center gap-3.5">
           {/* Official HSS ALL IN ONE Logo */}
           <div className="relative shrink-0">
-            <img
-              src={logoSrc}
-              alt="HSS ALL IN ONE Logo"
-              width={46}
-              height={46}
-              className="w-11 h-11 rounded-xl object-contain shadow-md shadow-purple-900/40 border border-purple-500/30"
-              onError={(e) => {
-                // Fallback to favicon icon if needed
-                (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL || '/'}pwa-192x192.png`;
-              }}
-            />
+            <div className="w-11 h-11 rounded-xl bg-[#1A1C23] flex items-center justify-center shadow-md shadow-purple-900/40 border border-purple-500/30 overflow-hidden">
+              <img
+                src={appLogo}
+                alt="HSS ALL IN ONE Logo"
+                className="w-8 h-8 object-contain"
+                onError={(e) => {
+                  e.currentTarget.src = '/logo.png';
+                }}
+              />
+            </div>
             <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-[9px] text-white font-black shadow">
               ✓
             </div>

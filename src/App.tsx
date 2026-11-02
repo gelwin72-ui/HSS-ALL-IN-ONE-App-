@@ -308,7 +308,8 @@ export function App() {
       CloudSync.setActiveSyncEmail(admin.email);
       
       // Force hard refresh on mobile for reliable sync
-      if (CloudSync.detectDevicePlatform() !== 'Web Browser' && auth.currentUser) {
+      const platform = CloudSync.detectDevicePlatform();
+      if (platform !== 'Web Browser' && auth.currentUser) {
         await CloudSync.forceFetchFromCloud(auth.currentUser);
       }
 

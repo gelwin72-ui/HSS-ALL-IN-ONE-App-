@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { GraduationCap, Sparkles, BookOpen, Award, CheckCircle2 } from 'lucide-react';
+import appLogo from '../assets/images/app_logo.png';
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -40,10 +41,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       <div className="flex flex-col items-center text-center z-10 my-auto">
         <div className="relative mb-6">
           <div className="w-24 h-24 rounded-3xl bg-[#1A1C23] flex items-center justify-center shadow-2xl shadow-purple-600/20 ring-4 ring-purple-500/10 overflow-hidden">
-            <img 
-              src="/logo.png" 
-              alt="HSS ALL IN ONE Logo" 
-              className="w-full h-full object-contain p-2"
+            <img
+              src={appLogo}
+              alt="HSS ALL IN ONE Logo"
+              className="w-16 h-16 object-contain"
+              onError={(e) => {
+                e.currentTarget.src = '/logo.png';
+              }}
             />
           </div>
           <div className="absolute -bottom-2 -right-2 w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-lg border-2 border-[#0F1115]">

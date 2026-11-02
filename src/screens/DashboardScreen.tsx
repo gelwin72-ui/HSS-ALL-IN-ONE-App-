@@ -58,6 +58,7 @@ import {
   Reminder
 } from '../types';
 import { ScreenTab } from '../components/BottomNav';
+import appLogo from '../assets/images/app_logo.png';
 
 interface DashboardScreenProps {
   school: SchoolProfile;
@@ -118,7 +119,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#2D3139]">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-xl shadow-purple-950/40">
-            <School className="w-7 h-7" />
+            <div className="w-10 h-10 rounded-xl bg-[#1A1C23] border border-purple-500/20 flex items-center justify-center shadow-lg shadow-purple-950/40 shrink-0 overflow-hidden">
+              <img
+                src={appLogo}
+                alt="HSS ALL IN ONE Logo"
+                className="w-7 h-7 object-contain"
+                onError={(e) => {
+                  e.currentTarget.src = '/logo.png';
+                }}
+              />
+            </div>
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
@@ -429,8 +439,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             className="bg-[#1A1C23] hover:bg-[#22252E] border border-[#2D3139] hover:border-purple-500/60 p-5 rounded-3xl transition-all cursor-pointer group shadow-lg flex flex-col justify-between"
           >
             <div>
-              <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4 group-hover:scale-110 transition">
-                <School className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4 group-hover:scale-110 transition overflow-hidden">
+                <img
+                  src={appLogo}
+                  alt="HSS ALL IN ONE Logo"
+                  className="w-6 h-6 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = '/logo.png';
+                  }}
+                />
               </div>
               <h4 className="text-base font-black text-white group-hover:text-purple-300 transition mb-1">
                 School Profile & Classes

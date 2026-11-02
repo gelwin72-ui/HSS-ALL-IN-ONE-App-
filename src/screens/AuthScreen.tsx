@@ -59,6 +59,7 @@ import {
   get
 } from '../utils/firebase';
 import { CloudSync } from '../utils/cloudSync';
+import appLogo from '../assets/images/app_logo.png';
 
 interface AuthScreenProps {
   onLoginSuccess: (teacher: TeacherAccount) => void;
@@ -961,7 +962,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       ]);
 
       if (!PRE_AUTHORIZED_EMAILS.has(cleanGmail)) {
-        setErrorMsg('Access Denied: Only authorized school admin Gmail addresses (joicegeorge1910@gmail.com or gelwin72@gmail.com) can access the School Admin Panel.');
+        setErrorMsg('Access Denied: Only authorized school admin Gmail addresses (joicegeorge1910@gmail.com, gelwin72@gmail.com or lincythomas1911@gmail.com) can access the School Admin Panel.');
         setIsLoading(false);
         return;
       }
@@ -980,6 +981,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       }
       if (cleanGmail === 'gelwin72@gmail.com' && adminPassword !== 'elwin1234') {
         setErrorMsg('Incorrect password for gelwin72@gmail.com. Please enter the correct password.');
+        setIsLoading(false);
+        return;
+      }
+      if (cleanGmail === 'lincythomas1911@gmail.com' && adminPassword !== 'lincy1911') {
+        setErrorMsg('Incorrect password for lincythomas1911@gmail.com. Please enter the correct password.');
         setIsLoading(false);
         return;
       }
@@ -1008,7 +1014,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       } catch {}
 
       const adminNameDetermined = adminDesignation || (
-        cleanGmail.includes('gelwin') ? 'Gelwin' : 'Joice George'
+        cleanGmail.includes('gelwin') ? 'Gelwin' :
+        cleanGmail.includes('joice') ? 'Joice George' : 'Lincy Thomas'
       );
 
       const adminAccount: SchoolAdminAccount = {
@@ -1155,11 +1162,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       <div className="w-full max-w-xl z-10 space-y-5 animate-fade-in">
         {/* App Logo & Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center p-2 rounded-3xl bg-[#1A1C23] shadow-2xl shadow-purple-600/20 ring-4 ring-purple-500/10 mb-1 overflow-hidden w-20 h-20">
-            <img 
-              src="/logo.png" 
-              alt="Logo" 
-              className="w-full h-full object-contain p-1"
+          <div className="inline-flex items-center justify-center p-2 rounded-3xl bg-[#1A1C23] shadow-2xl shadow-purple-600/20 ring-4 ring-purple-500/10 mb-1 w-20 h-20 overflow-hidden">
+            <img
+              src={appLogo}
+              alt="HSS ALL IN ONE Logo"
+              className="w-14 h-14 object-contain"
+              onError={(e) => {
+                e.currentTarget.src = '/logo.png';
+              }}
             />
           </div>
 

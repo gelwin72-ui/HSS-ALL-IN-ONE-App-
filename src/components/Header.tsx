@@ -27,6 +27,7 @@ import { SchoolProfile, ClassInfo, ClassItem, TeacherInfo, SynthesisReport, Conn
 import { CloudSync, SyncStatus, SaveState } from '../utils/cloudSync';
 import { auth } from '../utils/firebase';
 import { ConfirmDialog } from './ConfirmDialog';
+import appLogo from '../assets/images/app_logo.png';
 
 interface HeaderProps {
   schoolName: string;
@@ -157,12 +158,15 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3.5 min-w-0">
             <div
               onClick={onNavigateHome}
-              className="w-10 h-10 rounded-xl bg-[#1A1C23] flex items-center justify-center shadow-lg shadow-purple-950/40 shrink-0 ring-1 ring-purple-400/20 cursor-pointer hover:scale-105 transition overflow-hidden"
+              className="w-10 h-10 rounded-xl bg-[#1A1C23] flex items-center justify-center shadow-lg shadow-purple-950/40 shrink-0 ring-1 ring-purple-400/20 cursor-pointer hover:scale-105 transition shrink-0 overflow-hidden"
             >
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
-                className="w-full h-full object-contain p-1"
+              <img
+                src={appLogo}
+                alt="HSS ALL IN ONE Logo"
+                className="w-8 h-8 object-contain"
+                onError={(e) => {
+                  e.currentTarget.src = '/logo.png';
+                }}
               />
             </div>
 

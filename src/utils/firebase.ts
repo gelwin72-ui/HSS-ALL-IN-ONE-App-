@@ -60,7 +60,7 @@ export const firebaseConfig = {
   appId: env.VITE_FIREBASE_APP_ID || firebaseConfigJson?.appId || '',
   apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigJson?.apiKey || '',
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson?.authDomain || `${firebaseConfigJson?.projectId || 'hss-all-in-one'}.firebaseapp.com`,
-  databaseURL: env.VITE_FIREBASE_DATABASE_URL || firebaseConfigJson?.databaseURL || `https://${firebaseConfigJson?.projectId || 'hss-all-in-one'}-default-rtdb.firebaseio.com`,
+  databaseURL: env.VITE_FIREBASE_DATABASE_URL || (firebaseConfigJson as any)?.databaseURL || `https://${firebaseConfigJson?.projectId || 'hss-all-in-one'}-default-rtdb.firebaseio.com`,
   storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson?.storageBucket || `${firebaseConfigJson?.projectId || 'hss-all-in-one'}.firebasestorage.app`,
   messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson?.messagingSenderId || '',
   measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigJson?.measurementId || '',

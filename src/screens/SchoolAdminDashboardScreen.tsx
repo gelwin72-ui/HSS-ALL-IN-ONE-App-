@@ -86,6 +86,7 @@ import {
   shareOrDownloadPDF
 } from '../utils/pdfGenerator';
 import { sendSchoolNotification } from '../utils/fcm';
+import appLogo from '../assets/images/app_logo.png';
 
 interface SchoolAdminDashboardScreenProps {
   admin: SchoolAdminAccount;
@@ -1592,8 +1593,15 @@ export const SchoolAdminDashboardScreen: React.FC<SchoolAdminDashboardScreenProp
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           {/* Brand & School Code Badge */}
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-rose-600 text-white shadow-lg shadow-amber-950/40 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
+            <div className="p-2 rounded-2xl bg-[#0F1115] flex items-center justify-center shadow-lg ring-1 ring-amber-500/20 shrink-0">
+              <img
+                src={appLogo}
+                alt="HSS ALL IN ONE Logo"
+                className="w-8 h-8 sm:w-9 sm:h-9 object-contain rounded-lg"
+                onError={(e) => {
+                  e.currentTarget.src = '/logo.png';
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">

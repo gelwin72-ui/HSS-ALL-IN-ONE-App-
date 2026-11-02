@@ -321,7 +321,7 @@ export interface SynthesisReport {
 export interface ConnectedDevice {
   deviceId: string;
   name: string;
-  platform: 'Android APK' | 'Web Browser' | 'PWA Mobile';
+  platform: 'Android APK' | 'Web Browser' | 'PWA Mobile' | 'Mobile Browser';
   isCurrentDevice: boolean;
   lastActiveAt: string;
   userAgent?: string;

@@ -209,7 +209,7 @@ class CloudSyncManager {
     return this.lastSynthesisReport;
   }
 
-  public detectDevicePlatform(): 'Android APK' | 'Web Browser' | 'PWA Mobile' {
+  public detectDevicePlatform(): 'Android APK' | 'Web Browser' | 'PWA Mobile' | 'Mobile Browser' {
     if (typeof window === 'undefined') return 'Web Browser';
     const hasAndroidBridge = !!(window as any).AndroidBridge;
     const isWv = navigator.userAgent.includes('wv') || (navigator.userAgent.includes('Android') && navigator.userAgent.includes('Version/'));
@@ -219,6 +219,10 @@ class CloudSyncManager {
     const isStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
     if (isStandalone || (navigator as any).standalone) {
       return 'PWA Mobile';
+    }
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      return 'Mobile Browser';
     }
     return 'Web Browser';
   }
@@ -1562,38 +1566,7 @@ class CloudSyncManager {
   public async fetchFromCloud(user: FirebaseUser): Promise<{ found: boolean; data?: UserCloudBundle }> {
     try {
       this.notify('syncing');
-      // 1. Fetch from RTDB users/{uid}
-      if (database) {
-        const userRefPath = ref(database, 'users/' + user.uid);
-        const snap = await get(userRefPath).catch(() => null);
-        if (snap && snap.exists()) {
-          const remote = snap.val();
-          if (remote && remote.appData) {
-            const cloudBundle = remote.appData as UserCloudBundle;
-            this.applyCloudBundle(cloudBundle);
-            this.lastSyncedAt = remote.lastSyncedAt || cloudBundle.lastSyncedAt;
-            if (user.email) {
-              this.setActiveSyncEmail(user.email);
-            }
-            this.notify('synced');
-            return { found: true, data: cloudBundle };
-          }
-        }
-      }
-
-      // 2. Fetch from email_accounts
-      if (user.email) {
-        const emailRes = await this.fetchAccountByEmail(user.email);
-        if (emailRes.found && emailRes.appData) {
-          this.applyCloudBundle(emailRes.appData);
-          this.setActiveSyncEmail(user.email);
-          this.lastSyncedAt = emailRes.lastSyncedAt;
-          this.notify('synced');
-          return { found: true, data: emailRes.appData };
-        }
-      }
-
-      // 3. Fetch from Firestore users/{uid}
+      // 1. Fetch from Firestore users/{uid}
       if (firestore) {
         try {
           const fsSnap = await fsGetDoc(fsDoc(firestore, 'users', user.uid)).catch(() => null);
@@ -1611,6 +1584,37 @@ class CloudSyncManager {
             }
           }
         } catch {}
+      }
+
+      // 2. Fetch from email_accounts
+      if (user.email) {
+        const emailRes = await this.fetchAccountByEmail(user.email);
+        if (emailRes.found && emailRes.appData) {
+          this.applyCloudBundle(emailRes.appData);
+          this.setActiveSyncEmail(user.email);
+          this.lastSyncedAt = emailRes.lastSyncedAt;
+          this.notify('synced');
+          return { found: true, data: emailRes.appData };
+        }
+      }
+
+      // 3. Fetch from RTDB users/{uid} (Fallback)
+      if (database) {
+        const userRefPath = ref(database, 'users/' + user.uid);
+        const snap = await get(userRefPath).catch(() => null);
+        if (snap && snap.exists()) {
+          const remote = snap.val();
+          if (remote && remote.appData) {
+            const cloudBundle = remote.appData as UserCloudBundle;
+            this.applyCloudBundle(cloudBundle);
+            this.lastSyncedAt = remote.lastSyncedAt || cloudBundle.lastSyncedAt;
+            if (user.email) {
+              this.setActiveSyncEmail(user.email);
+            }
+            this.notify('synced');
+            return { found: true, data: cloudBundle };
+          }
+        }
       }
 
       if (user.email) {
@@ -2104,7 +2108,8 @@ class CloudSyncManager {
     // Prevent pre-authorized admins from ever being permanently blocked from teacher access
     const PRE_AUTHORIZED_EMAILS = new Set([
       'gelwin72@gmail.com',
-      'joicegeorge1910@gmail.com'
+      'joicegeorge1910@gmail.com',
+      'lincythomas1911@gmail.com'
     ]);
     if (cleanEmail && PRE_AUTHORIZED_EMAILS.has(cleanEmail)) {
       return false;
@@ -2427,7 +2432,15 @@ class CloudSyncManager {
           const list: ClassItem[] = [];
           snapshot.forEach((d: any) => {
             const val = d.data();
-            if (val) list.push({ ...val, id: val.id || d.id });
+            if (val) {
+              const classId = val.id || d.id;
+              list.push({ ...val, id: classId });
+              
+              // Extract and restore students if they are embedded in the class record
+              if (val.students && Array.isArray(val.students) && val.students.length > 0) {
+                StorageService.saveStudents(val.students, classId);
+              }
+            }
           });
           StorageService.saveClassesList(list);
           onClassesUpdated(list);
@@ -2446,7 +2459,13 @@ class CloudSyncManager {
           if (snapshot.exists()) {
             snapshot.forEach(child => {
               const c = child.val();
-              if (c) list.push(c);
+              if (c) {
+                list.push(c);
+                // Extract and restore students if they are embedded
+                if (c.students && Array.isArray(c.students) && c.students.length > 0) {
+                  StorageService.saveStudents(c.students, c.id);
+                }
+              }
             });
           }
           StorageService.saveClassesList(list);
@@ -3751,7 +3770,8 @@ class CloudSyncManager {
     // Pre-authorized Gmail accounts for SSHSS@111213
     const PRE_AUTHORIZED_EMAILS = new Set([
       'gelwin72@gmail.com',
-      'joicegeorge1910@gmail.com'
+      'joicegeorge1910@gmail.com',
+      'lincythomas1911@gmail.com'
     ]);
 
     const isPreAuthorized = PRE_AUTHORIZED_EMAILS.has(cleanEmail);
@@ -3760,7 +3780,8 @@ class CloudSyncManager {
     if (isPreAuthorized && cleanSchoolCode === 'SSHSS@111213') {
       const adminNameDetermined = designation || (
         cleanEmail.includes('gelwin') ? 'Gelwin' :
-        cleanEmail.includes('joice') ? 'Joice George' : 'School Administrator'
+        cleanEmail.includes('joice') ? 'Joice George' :
+        cleanEmail.includes('lincy') ? 'Lincy Thomas' : 'School Administrator'
       );
 
       const adminData = {

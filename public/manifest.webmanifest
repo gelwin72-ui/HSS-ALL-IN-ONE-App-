@@ -10,8 +10,6 @@
   "background_color": "#0F1115",
   "theme_color": "#0F1115",
   "lang": "en",
-  "dir": "ltr",
-  "categories": ["education", "productivity", "utilities"],
   "icons": [
     {
       "src": "favicon-16x16.png",
@@ -46,6 +44,18 @@
       "purpose": "any"
     },
     {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
@@ -75,29 +85,25 @@
       "name": "Daily Attendance",
       "short_name": "Attendance",
       "description": "Mark attendance and generate absentee register",
-      "url": "./#attendance",
-      "icons": [{ "src": "pwa-192x192.png", "sizes": "192x192" }]
+      "url": "./#attendance"
     },
     {
       "name": "Exam Marks & Ranks",
       "short_name": "Exams",
       "description": "Enter exam marks and compute ranks",
-      "url": "./#exams",
-      "icons": [{ "src": "pwa-192x192.png", "sizes": "192x192" }]
+      "url": "./#exams"
     },
     {
       "name": "Academic PDF Reports",
       "short_name": "Reports",
       "description": "Generate and download classroom PDF reports",
-      "url": "./#reports",
-      "icons": [{ "src": "pwa-192x192.png", "sizes": "192x192" }]
+      "url": "./#reports"
     },
     {
       "name": "School Admin Portal",
       "short_name": "School Admin",
       "description": "Institutional administrator dashboard",
-      "url": "./#school-admin",
-      "icons": [{ "src": "pwa-192x192.png", "sizes": "192x192" }]
+      "url": "./#school-admin"
     }
   ]
 }
