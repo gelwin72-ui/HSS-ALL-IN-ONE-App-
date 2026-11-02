@@ -1,87 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, X, ShieldCheck, Sparkles, Smartphone, CheckCircle2 } from 'lucide-react';
-import { requestAndSaveFCMToken, isRunningInAndroidApp, getCachedFCMToken } from '../utils/fcm';
-import { auth } from '../utils/firebase';
-import { StorageService } from '../utils/storage';
+import { Bell, X, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+import { getNotificationStatus, requestNotificationPermission } from '../utils/onesignal';
 
-const DISMISSED_KEY = 'hss_push_banner_dismissed_v2';
+const DISMISSED_KEY = 'hss_push_banner_dismissed_v1';
 
 export const NotificationPermissionBanner: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
-  const [isGranted, setIsGranted] = useState(false);
-  const isAndroid = isRunningInAndroidApp();
+  const [status, setStatus] = useState<{
+    supported: boolean;
+    permission: boolean;
+    optedIn: boolean;
+    subscriptionId?: string | null;
+  }>({ supported: true, permission: false, optedIn: false });
 
   useEffect(() => {
     let isMounted = true;
 
-    const checkPermissionState = async () => {
-      // If already granted, don't show prompt
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (Notification.permission === 'granted') {
-          setIsGranted(true);
-          return;
-        }
-        if (Notification.permission === 'denied') {
-          // If denied, respect user decision and do not repeatedly prompt
-          return;
-        }
-      }
-
-      // Check if user previously dismissed prompt
+    const checkStatus = async () => {
+      // Check if user already dismissed the prompt
       const dismissed = localStorage.getItem(DISMISSED_KEY);
-      if (dismissed) {
-        const dismissedTime = parseInt(dismissed, 10);
-        // Only re-check after 7 days if previously dismissed
-        if (!isNaN(dismissedTime) && Date.now() - dismissedTime < 7 * 24 * 60 * 60 * 1000) {
-          return;
-        }
+      const notifStatus = await getNotificationStatus();
+      
+      if (!isMounted) return;
+      setStatus(notifStatus);
+
+      // Only show banner if supported, not yet granted, and not recently dismissed
+      if (notifStatus.supported && !notifStatus.permission && !dismissed) {
+        // Slight delay so the UI loads smoothly first
+        const timer = setTimeout(() => {
+          if (isMounted) setIsVisible(true);
+        }, 2000);
+        return () => clearTimeout(timer);
       }
-
-      // If running inside Android APK and notifications are already enabled
-      if (isAndroid) {
-        const androidApp = (window as any).AndroidApp;
-        if (androidApp && androidApp.areNotificationsEnabled && androidApp.areNotificationsEnabled()) {
-          setIsGranted(true);
-          return;
-        }
-      }
-
-      // Delay prompt slightly so the page and auth settle smoothly first
-      const timer = setTimeout(() => {
-        if (isMounted) setIsVisible(true);
-      }, 2500);
-
-      return () => clearTimeout(timer);
     };
 
-    checkPermissionState();
+    checkStatus();
 
     return () => {
       isMounted = false;
     };
-  }, [isAndroid]);
+  }, []);
 
   const handleAllowNotifications = async () => {
     try {
       setIsRequesting(true);
+      const granted = await requestNotificationPermission();
+      const updatedStatus = await getNotificationStatus();
+      setStatus(updatedStatus);
 
-      const session = StorageService.getAuthSession();
-      const userUid = auth?.currentUser?.uid || session.currentTeacher?.id || session.currentAdmin?.id || session.currentAdmin?.email || 'user';
-      const schoolCode = session.currentTeacher?.schoolCode || session.currentAdmin?.schoolCode || StorageService.getSchoolProfile().schoolCode || 'SSHSS@111213';
-      const role = session.role || 'teacher';
-
-      // Request and register token with FCM
-      const token = await requestAndSaveFCMToken(userUid, schoolCode, role);
-
-      if (token) {
-        setIsGranted(true);
+      if (granted) {
         localStorage.setItem(DISMISSED_KEY, 'granted');
         setTimeout(() => {
           setIsVisible(false);
         }, 1500);
       } else {
-        localStorage.setItem(DISMISSED_KEY, Date.now().toString());
+        localStorage.setItem(DISMISSED_KEY, 'denied_or_closed');
         setIsVisible(false);
       }
     } catch (err) {
@@ -93,37 +67,37 @@ export const NotificationPermissionBanner: React.FC = () => {
   };
 
   const handleDismiss = () => {
-    localStorage.setItem(DISMISSED_KEY, Date.now().toString());
+    localStorage.setItem(DISMISSED_KEY, 'dismissed_' + Date.now());
     setIsVisible(false);
   };
 
-  if (!isVisible || isGranted) {
+  if (!isVisible || !status.supported || status.permission) {
     return null;
   }
 
   return (
     <div
-      id="fcm-notification-permission-prompt"
-      className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-50 bg-[#1E3A8A]/95 backdrop-blur-md border border-amber-400/40 rounded-2xl p-4 shadow-2xl shadow-black/80 text-white animate-in fade-in slide-in-from-bottom-5 duration-300"
+      id="onesignal-notification-permission-prompt"
+      className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-50 bg-[#1A1C23]/95 backdrop-blur-md border border-amber-500/30 rounded-2xl p-4 shadow-2xl shadow-black/80 text-white animate-in fade-in slide-in-from-bottom-5 duration-300"
     >
       <div className="flex items-start gap-3.5">
-        <div className="p-2.5 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30 shrink-0">
+        <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/30 shrink-0">
           <Bell className="w-5 h-5 animate-bounce" />
         </div>
 
         <div className="flex-1 min-w-0 pr-6">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-black tracking-wider uppercase bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded border border-amber-400/30">
-              {isAndroid ? 'Android FCM Push' : 'Firebase Web Push'}
+            <span className="text-xs font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">
+              OneSignal Push
             </span>
-            <span className="text-xs text-blue-200 font-medium">HSS ALL IN ONE</span>
+            <span className="text-xs text-slate-400 font-medium">HSS ALL IN ONE</span>
           </div>
 
           <h4 className="text-sm font-bold text-white mt-1">
-            Enable Push Directives &amp; Alerts?
+            Enable Push Directives & Alerts?
           </h4>
-          <p className="text-xs text-blue-100/90 mt-1 leading-relaxed">
-            Get instant institutional circulars, exam schedule updates, and principal directives delivered to this device.
+          <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+            Get instant institutional circulars, principal directives, and exam schedule updates directly on this device.
           </p>
 
           <div className="flex items-center gap-2 mt-3.5">
@@ -132,10 +106,10 @@ export const NotificationPermissionBanner: React.FC = () => {
               type="button"
               onClick={handleAllowNotifications}
               disabled={isRequesting}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-blue-950 font-extrabold text-xs shadow-md shadow-amber-950/40 transition active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold text-xs shadow-md shadow-amber-950/40 transition active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
             >
               {isRequesting ? (
-                <span>Registering Device...</span>
+                <span>Enabling...</span>
               ) : (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5" />
@@ -148,7 +122,7 @@ export const NotificationPermissionBanner: React.FC = () => {
               id="btn-dismiss-push-prompt"
               type="button"
               onClick={handleDismiss}
-              className="px-3 py-1.5 rounded-xl bg-blue-900/60 hover:bg-blue-800 text-blue-200 font-medium text-xs border border-blue-700/50 transition active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-[#252830] hover:bg-[#2D3139] text-slate-300 font-medium text-xs border border-[#2D3139] transition active:scale-95"
             >
               Not Now
             </button>
@@ -158,7 +132,7 @@ export const NotificationPermissionBanner: React.FC = () => {
         <button
           type="button"
           onClick={handleDismiss}
-          className="absolute top-3 right-3 p-1 rounded-lg text-blue-300 hover:text-white hover:bg-blue-800/50 transition cursor-pointer"
+          className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#252830] transition"
           aria-label="Close"
         >
           <X className="w-4 h-4" />

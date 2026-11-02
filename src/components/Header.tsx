@@ -8,23 +8,16 @@ import {
   LogOut,
   ChevronDown,
   Check,
-  CheckCircle2,
   Plus,
   Layers,
   Cloud,
   CloudOff,
   RefreshCw,
   Trash2,
-  FolderOpen,
-  Zap,
-  Laptop,
-  Smartphone,
-  ShieldCheck,
-  Radio,
-  ExternalLink
+  FolderOpen
 } from 'lucide-react';
-import { SchoolProfile, ClassInfo, ClassItem, TeacherInfo, SynthesisReport, ConnectedDevice } from '../types';
-import { CloudSync, SyncStatus, SaveState } from '../utils/cloudSync';
+import { SchoolProfile, ClassInfo, ClassItem, TeacherInfo } from '../types';
+import { CloudSync, SyncStatus } from '../utils/cloudSync';
 import { auth } from '../utils/firebase';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -68,61 +61,25 @@ export const Header: React.FC<HeaderProps> = ({
   const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
   const [classToDelete, setClassToDelete] = useState<ClassItem | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(CloudSync.getStatus());
-  const [saveState, setSaveState] = useState<SaveState>(CloudSync.getSaveState());
   const [lastSyncTime, setLastSyncTime] = useState<string | undefined>(CloudSync.getLastSyncedAt());
   const [activeSyncEmail, setActiveSyncEmail] = useState<string | undefined>(
     CloudSync.getActiveSyncEmail() || auth?.currentUser?.email || teacher?.email || undefined
   );
   const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const [isSynthesisPopoverOpen, setIsSynthesisPopoverOpen] = useState(false);
-  const [synthesisReport, setSynthesisReport] = useState<SynthesisReport | null>(CloudSync.getSynthesisReport());
-  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const synthesisDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsub = CloudSync.addListener((status, lastSynced, email, report, currentSaveState) => {
+    const unsub = CloudSync.addListener((status, lastSynced, email) => {
       setSyncStatus(status);
       setLastSyncTime(lastSynced);
       setActiveSyncEmail(email || CloudSync.getActiveSyncEmail() || auth?.currentUser?.email || teacher?.email || undefined);
-      if (report) {
-        setSynthesisReport(report);
-      }
-      if (currentSaveState) {
-        setSaveState(currentSaveState);
-      }
     });
-
-    const handleSaveStateEvent = (e: any) => {
-      if (e.detail?.state) {
-        setSaveState(e.detail.state);
-      }
-    };
-    window.addEventListener('hss:cloud-save-state', handleSaveStateEvent);
-
-    return () => {
-      unsub();
-      window.removeEventListener('hss:cloud-save-state', handleSaveStateEvent);
-    };
+    return unsub;
   }, [teacher?.email]);
 
-  const toggleSynthesisPopover = () => {
-    const nextState = !isSynthesisPopoverOpen;
-    setIsSynthesisPopoverOpen(nextState);
-    if (nextState) {
-      CloudSync.getConnectedDevices().then(setConnectedDevices).catch(() => {});
-      setSynthesisReport(CloudSync.getSynthesisReport());
-    }
-  };
-
-  const handleDeepSynthesis = async () => {
+  const handleForceSync = async () => {
     setIsManualSyncing(true);
-    const res = await CloudSync.forceDeepSynthesis();
-    if (res.report) {
-      setSynthesisReport(res.report);
-    }
-    const devs = await CloudSync.getConnectedDevices();
-    setConnectedDevices(devs);
+    await CloudSync.pushToCloud();
     setTimeout(() => setIsManualSyncing(false), 500);
   };
 
@@ -135,14 +92,11 @@ export const Header: React.FC<HeaderProps> = ({
         .toUpperCase()
     : 'TR';
 
-  // Close dropdowns when clicking outside
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsClassDropdownOpen(false);
-      }
-      if (synthesisDropdownRef.current && !synthesisDropdownRef.current.contains(event.target as Node)) {
-        setIsSynthesisPopoverOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -300,171 +254,34 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Multi-Device Instant Data Synthesis Badge & Popover */}
-            <div className="relative" ref={synthesisDropdownRef}>
-              <button
-                type="button"
-                onClick={toggleSynthesisPopover}
-                className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs transition-all shadow-sm cursor-pointer group ${
-                  saveState === 'saved'
-                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30'
-                    : saveState === 'saving' || syncStatus === 'syncing' || isManualSyncing
-                    ? 'bg-purple-950/40 border-purple-500/50 text-purple-300'
-                    : saveState === 'offline'
-                    ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-                    : 'bg-[#1A1C23] border-[#2D3139] hover:border-emerald-500/40'
-                }`}
-                title="Instant Data Auto-Save & Cloud Synchronization. Click for fleet details."
-              >
-                {saveState === 'saving' || syncStatus === 'syncing' || isManualSyncing ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 text-purple-400 animate-spin" />
-                    <span className="hidden sm:inline text-[11px] font-bold text-purple-300">Saving...</span>
-                  </>
-                ) : saveState === 'saved' ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-in zoom-in-75 duration-200" />
-                    <span className="hidden sm:inline text-[11px] font-bold text-emerald-300">✓ Saved to Cloud</span>
-                  </>
-                ) : saveState === 'offline' ? (
-                  <>
-                    <CloudOff className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline text-[11px] font-semibold text-amber-300">Offline (Saved locally)</span>
-                  </>
-                ) : syncStatus === 'synced' || activeSyncEmail ? (
-                  <>
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <Zap className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition" />
-                    <span className="hidden sm:inline text-[11px] font-bold text-emerald-300">Instant Synthesis</span>
-                    {connectedDevices.length > 1 && (
-                      <span className="hidden md:inline px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                        {connectedDevices.length} Devs
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <CloudOff className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">Offline</span>
-                  </>
-                )}
-                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isSynthesisPopoverOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {/* Instant Synthesis Popover Panel */}
-              {isSynthesisPopoverOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-[#15171E] border border-[#2D3139] shadow-2xl z-50 p-4 space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
-                  {/* Popover Header */}
-                  <div className="flex items-center justify-between pb-3 border-b border-[#252830]">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <Zap className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>Instant Data Synthesis</span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-500/20 text-emerald-300 uppercase">
-                            Active
-                          </span>
-                        </h4>
-                        <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
-                          {activeSyncEmail || 'Local / Guest Mode'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleDeepSynthesis}
-                      disabled={isManualSyncing}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 shadow-sm disabled:opacity-50 active:scale-95 cursor-pointer"
-                      title="Force deep synthesis across all devices"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isManualSyncing ? 'animate-spin' : ''}`} />
-                      <span>{isManualSyncing ? 'Merging...' : 'Synthesize'}</span>
-                    </button>
-                  </div>
-
-                  {/* Synthesis Metrics Breakdown */}
-                  {synthesisReport ? (
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      <div className="p-2 rounded-xl bg-[#0F1115] border border-[#252830]">
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Classes</span>
-                        <span className="text-xs font-bold text-purple-300">{synthesisReport.classesSynthesized}</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-[#0F1115] border border-[#252830]">
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Students</span>
-                        <span className="text-xs font-bold text-indigo-300">{synthesisReport.studentsSynthesized}</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-[#0F1115] border border-[#252830]">
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Attend</span>
-                        <span className="text-xs font-bold text-emerald-300">{synthesisReport.attendanceSynthesized}</span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-[#0F1115] border border-[#252830]">
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Exams</span>
-                        <span className="text-xs font-bold text-amber-300">{synthesisReport.examsSynthesized}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded-xl bg-[#0F1115] border border-[#252830] text-center text-[11px] text-slate-400">
-                      ⚡ Ready to synthesize data seamlessly across all devices.
-                    </div>
-                  )}
-
-                  {/* Connected Devices Fleet */}
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                      <span>Connected Device Fleet</span>
-                      <span className="text-emerald-400 font-mono">{connectedDevices.length || 1} online</span>
-                    </div>
-
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {connectedDevices.length > 0 ? (
-                        connectedDevices.map(dev => (
-                          <div
-                            key={dev.deviceId}
-                            className={`flex items-center justify-between p-2 rounded-xl border text-xs ${
-                              dev.isCurrentDevice
-                                ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                                : 'bg-[#0F1115] border-[#252830] text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              {dev.platform === 'Android APK' ? (
-                                <Smartphone className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              ) : (
-                                <Laptop className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                              )}
-                              <div className="truncate">
-                                <span className="font-bold text-[11px] block truncate">{dev.name}</span>
-                                <span className="text-[9px] text-slate-400 block truncate">{dev.platform}</span>
-                              </div>
-                            </div>
-                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">
-                              {dev.isCurrentDevice ? 'This Device' : 'Synced'}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-200 text-xs">
-                          <Laptop className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="font-bold text-[11px]">This Device (Instant Synthesis Active)</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Non-Destructive Synthesis Guarantee */}
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-[10px] text-indigo-300 leading-tight">
-                    <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span>Non-destructive bidirectional synthesis: student records, attendance, and exam marks are merged without data loss.</span>
-                  </div>
-                </div>
+            {/* Cloud Sync Status Badge */}
+            <button
+              type="button"
+              onClick={handleForceSync}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#1A1C23] border border-[#2D3139] hover:border-purple-500/40 text-xs transition shadow-sm cursor-pointer"
+              title={
+                activeSyncEmail
+                  ? `Multi-device cloud synced with ${activeSyncEmail}. Click to force sync.`
+                  : 'Click to sync data across your devices.'
+              }
+            >
+              {syncStatus === 'syncing' || isManualSyncing ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-purple-300">Syncing...</span>
+                </>
+              ) : syncStatus === 'synced' || activeSyncEmail ? (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-emerald-300">Cloud Synced</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">Offline</span>
+                </>
               )}
-            </div>
+            </button>
 
             {/* Quick Search */}
             <button

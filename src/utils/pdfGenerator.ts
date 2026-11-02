@@ -603,7 +603,7 @@ export async function shareOrDownloadPDF(doc: jsPDF, filename: string, title: st
       }
     }
 
-    // 2. Safe Fallback Download (Creates object URL and Data URI fallback for Android WebViews)
+    // 2. Safe Fallback Download (Creates object URL, clicks, and cleans up safely without window.open or location.href)
     const url = window.URL.createObjectURL(pdfBlob);
     const a = document.createElement('a');
     a.href = url;
@@ -617,22 +617,6 @@ export async function shareOrDownloadPDF(doc: jsPDF, filename: string, title: st
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     }, 1000);
-
-    // 3. Android WebView Data URI secondary trigger if blob link was blocked
-    try {
-      const dataUri = doc.output('datauristring');
-      const a2 = document.createElement('a');
-      a2.href = dataUri;
-      a2.download = filename;
-      a2.style.display = 'none';
-      document.body.appendChild(a2);
-      a2.click();
-      setTimeout(() => {
-        document.body.removeChild(a2);
-      }, 1000);
-    } catch (e) {
-      // Ignore datauri fallback error if blocked
-    }
     
     return true;
 

@@ -1,5 +1,4 @@
 import OneSignal from 'react-onesignal';
-import { isDuplicateNotification } from './fcm';
 
 export const ONESIGNAL_APP_ID = 'e408c264-cc29-4f91-809f-1e5effc2b43d';
 
@@ -7,15 +6,11 @@ let isInitialized = false;
 let initPromise: Promise<boolean> | null = null;
 
 /**
- * Initializes the OneSignal Web/PWA SDK safely without duplicate init errors
+ * Initializes the OneSignal Web/PWA SDK
  */
 export async function initOneSignal(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   if (isInitialized) return true;
-  if ((window as any).__onesignal_initialized || (window as any).OneSignal?.initialized) {
-    isInitialized = true;
-    return true;
-  }
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
@@ -32,21 +27,11 @@ export async function initOneSignal(): Promise<boolean> {
       });
 
       isInitialized = true;
-      (window as any).__onesignal_initialized = true;
       console.log('[OneSignal] Initialized successfully with App ID:', ONESIGNAL_APP_ID, 'SW Path:', swPath);
 
-      // Register listener for foreground notifications with deduplication check
+      // Register listener for foreground notifications
       try {
         OneSignal.Notifications?.addEventListener('foregroundWillDisplay', (event: any) => {
-          const title = event?.notification?.title || '';
-          const body = event?.notification?.body || '';
-          if (title && isDuplicateNotification(title, body)) {
-            console.log('[OneSignal] Suppressed duplicate notification already handled by FCM:', title);
-            if (event.preventDefault) {
-              event.preventDefault();
-            }
-            return;
-          }
           console.log('[OneSignal] Foreground notification received:', event);
         });
       } catch (e) {
@@ -69,11 +54,6 @@ export async function initOneSignal(): Promise<boolean> {
 
       return true;
     } catch (error: any) {
-      if (error?.message && error.message.includes('already initialized')) {
-        isInitialized = true;
-        (window as any).__onesignal_initialized = true;
-        return true;
-      }
       // Gracefully handle domain restrictions (e.g. App ID restricted to https://gelwin72-ui.github.io during dev preview)
       console.warn('[OneSignal] Initialization note (origin restriction or offline):', error?.message || error);
       return false;

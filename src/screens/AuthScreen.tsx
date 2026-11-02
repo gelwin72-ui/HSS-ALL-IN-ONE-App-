@@ -273,288 +273,277 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
     const assignedClassName = `${effectiveStandard} ${effectiveStream} ${signupSection}`.trim();
     const cleanSchoolCode = (signupSchoolCode.trim() || 'SSHSS@111213').toUpperCase();
     const cleanEmail = signupEmail.trim().toLowerCase();
-    const firebaseUid = 'teacher-' + Date.now();
+    let firebaseUid = 'teacher-' + Date.now();
     const initialClassId = 'class-' + Date.now();
-    const nowIso = new Date().toISOString();
 
-    const newAccount: TeacherAccount = {
-      id: firebaseUid,
-      uid: firebaseUid,
-      name: signupName.trim(),
-      email: cleanEmail,
-      gmail: cleanEmail,
-      password: '',
-      status: 'active',
-      academicYear: signupAcademicYear.trim(),
-      phone: signupPhone.trim(),
-      schoolName: signupSchool.trim() || "St. Sebastian's Higher Secondary School",
-      schoolCode: cleanSchoolCode,
-      subject: effectiveSubject,
-      primarySubject: effectiveSubject,
-      standard: effectiveStandard,
-      stream: effectiveStream,
-      section: signupSection,
-      assignedClass: assignedClassName,
-      designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
-      dob: signupDob,
-      createdAt: nowIso,
-      lastActiveAt: nowIso
-    };
+    // Check if permanently deleted for this school
+    const isPermDeleted = await CloudSync.isTeacherPermanentlyDeletedForSchool(cleanSchoolCode, undefined, cleanEmail);
+    if (isPermDeleted) {
+      setErrorMsg('This teacher account has been permanently removed from this school. Please contact the School Administrator.');
+      return;
+    }
 
-    // Instant local registration of original created classroom
-    if (effectiveStandard && signupSection) {
-      const initialClass: ClassItem = {
-        id: initialClassId,
-        className: assignedClassName,
+    setIsLoading(true);
+    setLoadingText('Setting up teacher profile...');
+
+    try {
+      // Firebase Auth registration or login
+      if (cleanEmail) {
+        try {
+          let userCred: any = null;
+          try {
+            userCred = await createUserWithEmailAndPassword(auth, cleanEmail, signupPassword);
+            if (userCred?.user) {
+              await updateProfile(userCred.user, { displayName: signupName.trim() }).catch(() => {});
+            }
+          } catch (createErr: any) {
+            if (createErr?.code === 'auth/email-already-in-use') {
+              userCred = await signInWithEmailAndPassword(auth, cleanEmail, signupPassword).catch(() => null);
+            }
+          }
+
+          if (userCred?.user?.uid) {
+            firebaseUid = userCred.user.uid;
+          } else if (auth?.currentUser?.uid) {
+            firebaseUid = auth.currentUser.uid;
+          }
+        } catch (authErr: any) {
+          console.warn('Firebase Auth note:', authErr);
+        }
+      }
+
+      // Clear any temporary deletion flags for re-entry
+      StorageService.removeTemporarilyDeletedTeacherId(firebaseUid, cleanEmail);
+
+      const nowIso = new Date().toISOString();
+      const newAccount: TeacherAccount = {
+        id: firebaseUid,
+        uid: firebaseUid,
+        name: signupName.trim(),
+        email: cleanEmail,
+        gmail: cleanEmail,
+        password: '',
+        status: 'active',
+        academicYear: signupAcademicYear.trim(),
+        phone: signupPhone.trim(),
+        schoolName: signupSchool.trim() || "St. Sebastian's Higher Secondary School",
+        schoolCode: cleanSchoolCode,
+        subject: effectiveSubject,
+        primarySubject: effectiveSubject,
         standard: effectiveStandard,
         stream: effectiveStream,
         section: signupSection,
-        academicYear: signupAcademicYear.trim() || '2026-2027',
-        classStrength: 0,
-        teacherId: firebaseUid,
-        teacherUid: firebaseUid,
-        teacherName: newAccount.name,
-        schoolCode: cleanSchoolCode,
-        isTeacherCreated: true,
-        createdByTeacherId: firebaseUid,
-        createdByTeacherEmail: cleanEmail,
-        createdAt: nowIso
+        assignedClass: assignedClassName,
+        designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
+        dob: signupDob,
+        createdAt: nowIso,
+        lastActiveAt: nowIso
       };
-      const savedClass = StorageService.addNewClass(initialClass, []);
-      StorageService.setActiveClassId(savedClass.id);
-      newAccount.teacherClassId = savedClass.id;
-      newAccount.assignedClass = savedClass.className;
-    }
 
-    // Save locally (instant)
-    const registered = StorageService.registerTeacherAccount(newAccount);
-    if (!registered) {
-      const list = StorageService.getTeacherAccounts();
-      const existingIdx = list.findIndex(a => a.email.toLowerCase() === cleanEmail);
-      if (existingIdx >= 0) {
-        list[existingIdx] = { ...list[existingIdx], ...newAccount };
-        StorageService.saveTeacherAccounts(list);
+      // Fast atomic multi-location update in Realtime Database (non-blocking background)
+      if (database) {
+        try {
+          const rtdbUpdates: Record<string, any> = {};
+          rtdbUpdates[`teachers/${firebaseUid}`] = {
+            id: firebaseUid,
+            uid: firebaseUid,
+            name: signupName.trim(),
+            email: cleanEmail,
+            gmail: cleanEmail,
+            phone: signupPhone.trim(),
+            schoolName: signupSchool.trim(),
+            schoolCode: cleanSchoolCode,
+            academicYear: signupAcademicYear.trim(),
+            subject: effectiveSubject,
+            designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
+            role: 'teacher',
+            active: true,
+            createdAt: nowIso
+          };
+
+          rtdbUpdates[`schools/${cleanSchoolCode}/teachers/${firebaseUid}`] = {
+            id: firebaseUid,
+            uid: firebaseUid,
+            name: signupName.trim(),
+            email: cleanEmail,
+            gmail: cleanEmail,
+            phone: signupPhone.trim(),
+            schoolName: signupSchool.trim(),
+            schoolCode: cleanSchoolCode,
+            academicYear: signupAcademicYear.trim(),
+            subject: effectiveSubject,
+            designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
+            role: 'teacher',
+            active: true,
+            createdAt: nowIso
+          };
+
+          rtdbUpdates[`teacherSignups/${firebaseUid}`] = {
+            fullName: signupName.trim(),
+            email: cleanEmail,
+            dateOfBirth: signupDob,
+            mobileNumber: signupPhone.trim(),
+            schoolOrCollegeName: signupSchool.trim(),
+            schoolCode: cleanSchoolCode,
+            academicYear: signupAcademicYear.trim(),
+            subject: effectiveSubject,
+            isClassTeacher: signupIsClassTeacher,
+            className: signupIsClassTeacher ? effectiveStandard : '',
+            stream: signupIsClassTeacher ? effectiveStream : '',
+            section: signupIsClassTeacher ? signupSection : '',
+            createdAt: nowIso,
+            updatedAt: nowIso
+          };
+
+          update(ref(database), rtdbUpdates).catch(rtdbErr => {
+            console.warn('RTDB user profile write note:', rtdbErr);
+          });
+        } catch (rtdbErr) {
+          console.warn('RTDB sync warning:', rtdbErr);
+        }
       }
-    }
 
-    // Clear any temporary deletion flags for re-entry
-    StorageService.removeTemporarilyDeletedTeacherId(firebaseUid, cleanEmail);
+      // Save locally (instant)
+      const registered = StorageService.registerTeacherAccount(newAccount);
+      if (!registered) {
+        const list = StorageService.getTeacherAccounts();
+        const existingIdx = list.findIndex(a => a.email.toLowerCase() === cleanEmail);
+        if (existingIdx >= 0) {
+          list[existingIdx] = { ...list[existingIdx], ...newAccount };
+          StorageService.saveTeacherAccounts(list);
+        }
+      }
 
-    // Update current active TeacherInfo, SchoolProfile, and ClassInfo
-    const currentSchool = StorageService.getSchoolProfile();
-    const updatedSchool: SchoolProfile = {
-      ...currentSchool,
-      schoolName: newAccount.schoolName || currentSchool.schoolName,
-      schoolCode: newAccount.schoolCode
-    };
-    StorageService.saveSchoolProfile(updatedSchool);
+      // Register initial class if standard and section provided
+      if (effectiveStandard && signupSection) {
+        const initialClass: ClassItem = {
+          id: initialClassId,
+          className: assignedClassName,
+          standard: effectiveStandard,
+          stream: effectiveStream,
+          section: signupSection,
+          academicYear: signupAcademicYear.trim() || '2026-2027',
+          classStrength: 0,
+          teacherId: firebaseUid,
+          teacherUid: firebaseUid,
+          teacherName: newAccount.name,
+          schoolCode: cleanSchoolCode,
+          isTeacherCreated: true,
+          createdByTeacherId: firebaseUid,
+          createdByTeacherEmail: cleanEmail,
+          createdAt: new Date().toISOString()
+        };
+        const savedClass = StorageService.addNewClass(initialClass, []);
+        StorageService.setActiveClassId(savedClass.id);
+        newAccount.teacherClassId = savedClass.id;
+        newAccount.assignedClass = savedClass.className;
+        CloudSync.saveClassToSchool(cleanSchoolCode, savedClass, []).catch(() => {});
+      }
 
-    const updatedTeacher: TeacherInfo = {
-      teacherName: newAccount.name,
-      email: newAccount.email,
-      phone: newAccount.phone,
-      designation: newAccount.designation,
-      academicYear: signupAcademicYear.trim()
-    };
-    StorageService.saveTeacherInfo(updatedTeacher);
+      // Update current active TeacherInfo, SchoolProfile, and ClassInfo
+      const currentSchool = StorageService.getSchoolProfile();
+      const updatedSchool: SchoolProfile = {
+        ...currentSchool,
+        schoolName: newAccount.schoolName || currentSchool.schoolName,
+        schoolCode: newAccount.schoolCode
+      };
+      StorageService.saveSchoolProfile(updatedSchool);
 
-    if (newAccount.teacherClassId || initialClassId) {
-      const targetCid = newAccount.teacherClassId || initialClassId;
-      const currentClass = StorageService.getClassInfo(targetCid);
+      const updatedTeacher: TeacherInfo = {
+        teacherName: newAccount.name,
+        email: newAccount.email,
+        phone: newAccount.phone,
+        designation: newAccount.designation,
+        academicYear: signupAcademicYear.trim()
+      };
+      StorageService.saveTeacherInfo(updatedTeacher);
+
+      const currentClass = StorageService.getClassInfo(newAccount.teacherClassId || initialClassId);
       const updatedClass: ClassInfo = {
         ...currentClass,
-        id: targetCid,
         standard: signupStandard,
         stream: signupStream,
         section: signupSection,
         academicYear: signupAcademicYear.trim(),
         className: assignedClassName
       };
-      StorageService.saveClassInfo(updatedClass, targetCid);
-    }
+      StorageService.saveClassInfo(updatedClass, newAccount.teacherClassId || initialClassId);
 
-    StorageService.setAuthSession({
-      isLoggedIn: true,
-      role: 'teacher',
-      currentTeacher: newAccount,
-      currentAdmin: null
-    });
+      StorageService.setAuthSession({
+        isLoggedIn: true,
+        role: 'teacher',
+        currentTeacher: newAccount,
+        currentAdmin: null
+      });
 
-    setSuccessMsg(`Welcome, ${newAccount.name}! Account ready.`);
-    
-    // INSTANT ACCESS: Notify parent component immediately!
-    onLoginSuccess(newAccount);
-
-    // Background Firebase Auth & Cloud Synchronization (non-blocking)
-    (async () => {
-      try {
-        let activeUid = firebaseUid;
-        if (cleanEmail) {
-          try {
-            let userCred: any = null;
-            try {
-              userCred = await createUserWithEmailAndPassword(auth, cleanEmail, signupPassword);
-              if (userCred?.user) {
-                await updateProfile(userCred.user, { displayName: signupName.trim() }).catch(() => {});
-              }
-            } catch (createErr: any) {
-              if (createErr?.code === 'auth/email-already-in-use') {
-                userCred = await signInWithEmailAndPassword(auth, cleanEmail, signupPassword).catch(() => null);
-              }
-            }
-
-            if (userCred?.user?.uid) {
-              activeUid = userCred.user.uid;
-              newAccount.uid = activeUid;
-            } else if (auth?.currentUser?.uid) {
-              activeUid = auth.currentUser.uid;
-              newAccount.uid = activeUid;
-            }
-          } catch (authErr: any) {
-            console.warn('Firebase Auth background note:', authErr);
-          }
-        }
-
-        // Fast atomic multi-location update in Realtime Database
-        if (database) {
-          try {
-            const rtdbUpdates: Record<string, any> = {};
-            rtdbUpdates[`teachers/${activeUid}`] = {
-              id: activeUid,
-              uid: activeUid,
-              name: signupName.trim(),
-              email: cleanEmail,
-              gmail: cleanEmail,
-              phone: signupPhone.trim(),
-              schoolName: signupSchool.trim(),
-              schoolCode: cleanSchoolCode,
-              academicYear: signupAcademicYear.trim(),
-              subject: effectiveSubject,
-              designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
-              role: 'teacher',
-              active: true,
-              createdAt: nowIso
-            };
-
-            rtdbUpdates[`schools/${cleanSchoolCode}/teachers/${activeUid}`] = {
-              id: activeUid,
-              uid: activeUid,
-              name: signupName.trim(),
-              email: cleanEmail,
-              gmail: cleanEmail,
-              phone: signupPhone.trim(),
-              schoolName: signupSchool.trim(),
-              schoolCode: cleanSchoolCode,
-              academicYear: signupAcademicYear.trim(),
-              subject: effectiveSubject,
-              designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
-              role: 'teacher',
-              active: true,
-              createdAt: nowIso
-            };
-
-            rtdbUpdates[`teacherSignups/${activeUid}`] = {
-              fullName: signupName.trim(),
-              email: cleanEmail,
-              dateOfBirth: signupDob,
-              mobileNumber: signupPhone.trim(),
-              schoolOrCollegeName: signupSchool.trim(),
-              schoolCode: cleanSchoolCode,
-              academicYear: signupAcademicYear.trim(),
-              subject: effectiveSubject,
-              isClassTeacher: signupIsClassTeacher,
-              className: signupIsClassTeacher ? effectiveStandard : '',
-              stream: signupIsClassTeacher ? effectiveStream : '',
-              section: signupIsClassTeacher ? signupSection : '',
-              createdAt: nowIso,
-              updatedAt: nowIso
-            };
-
-            await update(ref(database), rtdbUpdates).catch(rtdbErr => {
-              console.warn('RTDB user profile write note:', rtdbErr);
-            });
-          } catch (rtdbErr) {
-            console.warn('RTDB sync warning:', rtdbErr);
-          }
-        }
-
-        // Sync original class to school catalog in cloud
-        if (effectiveStandard && signupSection) {
-          const initialClass = StorageService.getClassById(newAccount.teacherClassId || initialClassId);
-          if (initialClass) {
-            CloudSync.saveClassToSchool(cleanSchoolCode, initialClass, []).catch(() => {});
-          }
-        }
-
-        // Immediate cloud sync for new teacher account and classroom
-        if (auth?.currentUser) {
-          CloudSync.pushToCloud(auth.currentUser).catch(() => {});
-        }
-
-        // Record entered Gmail in Realtime Database under 'gmail' (no passwords)
-        if (cleanEmail) {
-          CloudSync.recordGmailEntry(cleanEmail, {
-            role: 'teacher',
-            name: signupName,
-            schoolCode: cleanSchoolCode,
-            loginMethod: 'email'
-          }).catch(() => {});
-        }
-
-        // Background cloud sync
-        if (cleanEmail) {
-          CloudSync.setActiveSyncEmail(cleanEmail);
-          CloudSync.saveAccountToCloud(cleanEmail, {
-            role: 'teacher',
-            teacherAccount: newAccount,
-            schoolCode: cleanSchoolCode
-          }).catch(() => {});
-          CloudSync.startRealtimeEmailSync(cleanEmail);
-        }
-
-        CloudSync.saveTeacherToSchool(cleanSchoolCode, newAccount).catch(() => {});
-
-        // Automatically dispatch Gmail email notification to School Admin for new teacher registration
-        fetch('/api/send-teacher-registration-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            teacherName: newAccount.name,
-            teacherEmail: cleanEmail,
-            teacherId: newAccount.id,
-            schoolCode: cleanSchoolCode,
-            schoolName: newAccount.schoolName || "St. Sebastian's Higher Secondary School",
-            registrationTime: nowIso
-          })
-        }).then(res => res.json()).then(data => {
-          console.log('[Registration Email] Admin email notification dispatch result:', data);
-        }).catch(err => {
-          console.warn('[Registration Email] Note:', err);
-        });
-
-        CloudSync.recordTeacherActivity(cleanSchoolCode, {
-          teacherId: newAccount.id,
-          teacherName: newAccount.name,
-          subject: effectiveSubject,
-          assignedClass: assignedClassName,
-          activityType: 'signup',
-          description: `Registered as teacher for ${assignedClassName} (${effectiveSubject})`
-        }).catch(() => {});
-
-        CloudSync.recordLoginActivity(cleanSchoolCode, {
-          email: cleanEmail || newAccount.name,
-          accessMethod: 'Teacher Sign-Up',
-          role: 'teacher',
-          success: true,
-          details: `Teacher signed up successfully via Teacher Sign-Up: ${cleanEmail || newAccount.name}`
-        }).catch(() => {});
-      } catch (bgErr) {
-        console.warn('Background sync note:', bgErr);
+      // Immediate cloud sync for new teacher account and classroom
+      if (auth?.currentUser) {
+        CloudSync.pushToCloud(auth.currentUser).catch(() => {});
       }
-    })();
+
+      // Record entered Gmail in Realtime Database under 'gmail' (no passwords)
+      if (cleanEmail) {
+        CloudSync.recordGmailEntry(cleanEmail, {
+          role: 'teacher',
+          name: signupName,
+          schoolCode: cleanSchoolCode,
+          loginMethod: 'email'
+        }).catch(() => {});
+      }
+
+      // Background cloud sync (non-blocking)
+      if (cleanEmail) {
+        CloudSync.setActiveSyncEmail(cleanEmail);
+        CloudSync.saveAccountToCloud(cleanEmail, {
+          role: 'teacher',
+          teacherAccount: newAccount,
+          schoolCode: cleanSchoolCode
+        }).catch(() => {});
+        CloudSync.startRealtimeEmailSync(cleanEmail);
+      }
+
+      CloudSync.saveTeacherToSchool(cleanSchoolCode, newAccount).catch(() => {});
+      CloudSync.recordTeacherActivity(cleanSchoolCode, {
+        teacherId: newAccount.id,
+        teacherName: newAccount.name,
+        subject: effectiveSubject,
+        assignedClass: assignedClassName,
+        activityType: 'signup',
+        description: `Registered as teacher for ${assignedClassName} (${effectiveSubject})`
+      }).catch(() => {});
+
+      CloudSync.recordLoginActivity(cleanSchoolCode, {
+        email: cleanEmail || newAccount.name,
+        accessMethod: 'Teacher Sign-Up',
+        role: 'teacher',
+        success: true,
+        details: `Teacher signed up successfully via Teacher Sign-Up: ${cleanEmail || newAccount.name}`
+      }).catch(() => {});
+
+      setSuccessMsg(`Welcome, ${newAccount.name}! Account ready.`);
+      onLoginSuccess(newAccount);
+    } catch (err: any) {
+      console.warn('Signup error:', err);
+      setErrorMsg('Account created locally. Welcome!');
+      onLoginSuccess({
+        id: firebaseUid,
+        name: signupName.trim(),
+        email: cleanEmail,
+        gmail: cleanEmail,
+        phone: signupPhone.trim(),
+        schoolName: signupSchool.trim() || "St. Sebastian's Higher Secondary School",
+        schoolCode: cleanSchoolCode,
+        subject: effectiveSubject,
+        designation: signupDesignation.trim() || `${effectiveSubject} Teacher`,
+        status: 'active',
+        createdAt: new Date().toISOString()
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 2. Teacher Login Handler (Instant Access with Original Classroom Recognition)
+  // 2. Teacher Login Handler (Instant Access with Fast Parallel Cloud Fallback)
   const handleTeacherLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -564,200 +553,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
     const cleanSchoolCode = (loginSchoolCode || 'SSHSS@111213').trim().toUpperCase();
     const normalizeDob = (d?: string) => (d || '').trim().replace(/[/\s.-]/g, '');
 
-    // Step 1: Check if teacher exists in local storage (INSTANT ACCESS PATH)
-    const localAccounts = StorageService.getTeacherAccounts();
-    let match: TeacherAccount | null = localAccounts.find(
-      a =>
-        (a.gmail && a.gmail.toLowerCase() === cleanQuery) ||
-        (a.email && a.email.toLowerCase() === cleanQuery) ||
-        a.phone === cleanQuery ||
-        a.name.toLowerCase() === cleanQuery
-    ) || null;
-
-    if (match) {
-      if (loginDob && match.dob && normalizeDob(match.dob) !== normalizeDob(loginDob) && match.dob !== loginDob.trim()) {
-        setErrorMsg('Incorrect date of birth. Please try again.');
-        return;
-      }
-
-      // Recognize this teacher's original created classroom
-      const teacherClasses = StorageService.getClassesByTeacher(match.id, match.email, match);
-      let targetClassId = '';
-
-      if (teacherClasses.length > 0) {
-        // Original classroom created by this teacher
-        const originalClass = teacherClasses[0];
-        targetClassId = originalClass.id;
-        match.teacherClassId = originalClass.id;
-        match.assignedClass = originalClass.className;
-        StorageService.setActiveClassId(originalClass.id);
-        StorageService.saveClassInfo({
-          id: originalClass.id,
-          standard: originalClass.standard,
-          stream: originalClass.stream,
-          section: originalClass.section,
-          className: originalClass.className,
-          academicYear: originalClass.academicYear,
-          classStrength: originalClass.classStrength
-        }, originalClass.id);
-      } else if (match.assignedClass || (match.standard && match.section)) {
-        // Recover exact original classroom from teacher profile (no dummy data)
-        const origClassId = match.teacherClassId || `class-${match.id || Date.now()}`;
-        const origClassName = match.assignedClass || `${match.standard || ''} ${match.stream || ''} ${match.section || ''}`.trim();
-        const originalClass: ClassItem = {
-          id: origClassId,
-          className: origClassName,
-          standard: match.standard || match.assignedClass?.split(' ')[1] || 'Class 12',
-          stream: match.stream || '',
-          section: match.section || '',
-          academicYear: match.academicYear || loginAcademicYear.trim() || '2026-2027',
-          classStrength: 0,
-          teacherId: match.id,
-          teacherUid: match.uid || match.id,
-          teacherName: match.name,
-          schoolCode: match.schoolCode || cleanSchoolCode,
-          isTeacherCreated: true,
-          createdByTeacherId: match.id,
-          createdByTeacherEmail: match.email || match.gmail || cleanQuery,
-          createdAt: match.createdAt || new Date().toISOString()
-        };
-        const savedClass = StorageService.addNewClass(originalClass, []);
-        targetClassId = savedClass.id;
-        match.teacherClassId = savedClass.id;
-        match.assignedClass = savedClass.className;
-        StorageService.setActiveClassId(savedClass.id);
-        StorageService.saveClassInfo({
-          id: savedClass.id,
-          standard: savedClass.standard,
-          stream: savedClass.stream,
-          section: savedClass.section,
-          className: savedClass.className,
-          academicYear: savedClass.academicYear,
-          classStrength: savedClass.classStrength
-        }, savedClass.id);
-      }
-
-      if (targetClassId) {
-        StorageService.setActiveClassId(targetClassId);
-      }
-
-      match.status = 'active';
-      match.password = '';
-      if (cleanSchoolCode) match.schoolCode = cleanSchoolCode;
-      if (loginAcademicYear.trim()) match.academicYear = loginAcademicYear.trim();
-      match.lastActiveAt = new Date().toISOString();
-
-      // Clear any temporary deletion flags
-      StorageService.removeDeletedTeacherId(match.id, match.email || match.gmail);
-      StorageService.removeTemporarilyDeletedTeacherId(match.id, match.email || match.gmail);
-
-      // Save updated teacher in local storage
-      const allAccounts = StorageService.getTeacherAccounts();
-      const existingIdx = allAccounts.findIndex(a => a.id === match!.id || (a.email && a.email.toLowerCase() === match!.email.toLowerCase()));
-      if (existingIdx >= 0) {
-        allAccounts[existingIdx] = match;
-      } else {
-        allAccounts.push(match);
-      }
-      StorageService.saveTeacherAccounts(allAccounts);
-      StorageService.updateTeacherLastActive(match.id);
-
-      const updatedTeacher: TeacherInfo = {
-        teacherName: match.name,
-        email: match.email || match.gmail || cleanQuery,
-        phone: match.phone,
-        designation: match.designation,
-        academicYear: match.academicYear
-      };
-      StorageService.saveTeacherInfo(updatedTeacher);
-
-      StorageService.setAuthSession({
-        isLoggedIn: true,
-        role: 'teacher',
-        currentTeacher: match,
-        currentAdmin: null
-      });
-
-      setSuccessMsg(`Welcome back, ${match.name}!`);
-
-      // INSTANT ACCESS: Enter the portal immediately without blocking
-      onLoginSuccess(match);
-
-      // Background Firebase Auth, cloud sync and restoration
-      const effectiveTeacher = match;
-      (async () => {
-        try {
-          if (cleanQuery.includes('@')) {
-            CloudSync.recordGmailEntry(cleanQuery, {
-              role: 'teacher',
-              name: effectiveTeacher.name,
-              schoolCode: effectiveTeacher.schoolCode,
-              loginMethod: 'email'
-            }).catch(() => {});
-          }
-
-          if (cleanQuery.includes('@')) {
-            try {
-              let cred: any = null;
-              try {
-                cred = await signInWithEmailAndPassword(auth, cleanQuery, loginPassword);
-              } catch (signInErr: any) {
-                if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential' || signInErr?.code === 'auth/wrong-password') {
-                  cred = await createUserWithEmailAndPassword(auth, cleanQuery, loginPassword).catch(() => null);
-                }
-              }
-              if (cred?.user?.uid) {
-                effectiveTeacher.uid = cred.user.uid;
-              }
-            } catch (authErr) {
-              console.warn('Teacher login Firebase Auth background note:', authErr);
-            }
-          }
-
-          // Background restoration of full classroom bundle from cloud if available
-          const restored = await CloudSync.restoreTeacherClassroom(
-            effectiveTeacher.uid || effectiveTeacher.id,
-            effectiveTeacher.email || effectiveTeacher.gmail || cleanQuery,
-            cleanSchoolCode
-          ).catch(() => null);
-
-          if (restored && restored.activeClassId) {
-            effectiveTeacher.teacherClassId = restored.activeClassId;
-            if (restored.classItem?.className) {
-              effectiveTeacher.assignedClass = restored.classItem.className;
-            }
-          }
-
-          if (effectiveTeacher.email) {
-            const syncEmail = effectiveTeacher.email.toLowerCase();
-            CloudSync.setActiveSyncEmail(syncEmail);
-            CloudSync.startRealtimeEmailSync(syncEmail);
-          }
-
-          if (effectiveTeacher.schoolCode) {
-            CloudSync.saveTeacherToSchool(effectiveTeacher.schoolCode, effectiveTeacher).catch(() => {});
-            CloudSync.recordTeacherActivity(effectiveTeacher.schoolCode, {
-              teacherId: effectiveTeacher.id,
-              teacherName: effectiveTeacher.name,
-              subject: effectiveTeacher.subject || effectiveTeacher.primarySubject || effectiveTeacher.designation,
-              assignedClass: effectiveTeacher.assignedClass,
-              activityType: 'login',
-              description: `Teacher ${effectiveTeacher.name} logged into School Portal`
-            }).catch(() => {});
-          }
-        } catch (bgErr) {
-          console.warn('Background login sync note:', bgErr);
-        }
-      })();
-
-      return;
-    }
-
-    // Step 2: Teacher NOT found in local storage - fast Cloud Lookup
     setIsLoading(true);
-    setLoadingText('Connecting to portal...');
+    setLoadingText('Signing in...');
 
     try {
+      // Check permanent deletion status first
+      let isPermDeleted = await CloudSync.isTeacherPermanentlyDeletedForSchool(cleanSchoolCode, undefined, cleanQuery);
+
       let authUid: string | null = null;
       if (cleanQuery.includes('@')) {
         try {
@@ -765,7 +567,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
           try {
             cred = await signInWithEmailAndPassword(auth, cleanQuery, loginPassword);
           } catch (signInErr: any) {
-            if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential' || signInErr?.code === 'auth/wrong-password') {
+            if (signInErr?.code === 'auth/user-not-found' || signInErr?.code === 'auth/invalid-credential') {
               cred = await createUserWithEmailAndPassword(auth, cleanQuery, loginPassword).catch(() => null);
             }
           }
@@ -777,31 +579,79 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         }
       }
 
-      // Fast path cloud lookup
-      const credResult = await CloudSync.fetchTeacherCredential(cleanQuery, cleanSchoolCode).catch(() => null);
+      if (!isPermDeleted && authUid) {
+        isPermDeleted = await CloudSync.isTeacherPermanentlyDeletedForSchool(cleanSchoolCode, authUid, cleanQuery);
+      }
 
-      if (credResult && (credResult as any).found) {
-        const res = credResult as any;
-        if (res.reason === 'status_inactive') {
-          setErrorMsg('Access Denied: Your teacher account status is inactive or suspended.');
+      if (isPermDeleted) {
+        setErrorMsg('This teacher account has been permanently removed from this school. Please contact the School Administrator.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Check against local storage accounts or cloud lookup
+      const localAccounts = StorageService.getTeacherAccounts();
+      let match: TeacherAccount | null = localAccounts.find(
+        a =>
+          (a.gmail && a.gmail.toLowerCase() === cleanQuery) ||
+          (a.email && a.email.toLowerCase() === cleanQuery) ||
+          a.phone === cleanQuery ||
+          a.name.toLowerCase() === cleanQuery
+      ) || null;
+
+      if (match) {
+        if (loginDob && match.dob && normalizeDob(match.dob) !== normalizeDob(loginDob) && match.dob !== loginDob.trim()) {
+          setErrorMsg('Incorrect date of birth. Please try again.');
           setIsLoading(false);
           return;
         }
-        if (res.teacher) {
-          match = res.teacher;
+      } else {
+        // Fast path 2: Teacher not found locally (new device/browser) - run Cloud lookup
+        const credResult = await CloudSync.fetchTeacherCredential(cleanQuery, cleanSchoolCode).catch(() => null);
+
+        if (credResult && (credResult as any).found) {
+          const res = credResult as any;
+          if (res.reason === 'status_inactive') {
+            setErrorMsg('Access Denied: Your teacher account status is inactive or suspended.');
+            setIsLoading(false);
+            return;
+          }
+          if (res.teacher) {
+            match = res.teacher;
+          }
+        }
+
+        // Multi-device fallback: Restore complete profile from cloud bundle
+        if (!match) {
+          const cloudFull = await CloudSync.fetchCompleteUserCloudData(authUid || undefined, cleanQuery, cleanSchoolCode).catch(() => null);
+          if (cloudFull?.teacherAccount) {
+            match = cloudFull.teacherAccount;
+          }
+        }
+
+        if (!match && (authUid || auth?.currentUser?.uid)) {
+          const activeUid = authUid || auth?.currentUser?.uid || `teach-${Date.now()}`;
+          match = {
+            id: activeUid,
+            uid: activeUid,
+            name: cleanQuery.split('@')[0] || 'Teacher',
+            email: cleanQuery,
+            gmail: cleanQuery,
+            phone: '',
+            status: 'active',
+            role: 'teacher',
+            schoolName: "St. Sebastian's Higher Secondary School",
+            schoolCode: cleanSchoolCode,
+            subject: 'General',
+            designation: 'Teacher',
+            createdAt: new Date().toISOString()
+          };
+          StorageService.registerTeacherAccount(match);
         }
       }
 
-      // Multi-device fallback: Restore complete profile from cloud bundle
       if (!match) {
-        const cloudFull = await CloudSync.fetchCompleteUserCloudData(authUid || undefined, cleanQuery, cleanSchoolCode).catch(() => null);
-        if (cloudFull?.teacherAccount) {
-          match = cloudFull.teacherAccount;
-        }
-      }
-
-      if (!match) {
-        setErrorMsg('Teacher account not found for this Gmail address. Please register first using the "Teacher Sign Up" tab.');
+        setErrorMsg('Teacher account not found. Please check your credentials or register on the "Teacher Sign Up" tab.');
         setIsLoading(false);
         return;
       }
@@ -820,10 +670,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       // Clear any temporary deletion flags upon re-entry
       StorageService.removeDeletedTeacherId(match.id, match.email || match.gmail);
       StorageService.removeTemporarilyDeletedTeacherId(match.id, match.email || match.gmail);
+      if (match.uid) {
+        StorageService.removeDeletedTeacherId(match.uid);
+        StorageService.removeTemporarilyDeletedTeacherId(match.uid);
+      }
 
-      // Update local storage
+      // Update local storage and auth session instantly
       const allAccounts = StorageService.getTeacherAccounts();
-      const existingIdx = allAccounts.findIndex(a => a.id === match!.id || (a.email && a.email.toLowerCase() === match!.email.toLowerCase()));
+      const existingIdx = allAccounts.findIndex(a => a.id === match!.id || a.email.toLowerCase() === match!.email.toLowerCase());
       if (existingIdx >= 0) {
         allAccounts[existingIdx] = match;
       } else {
@@ -832,7 +686,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       StorageService.saveTeacherAccounts(allAccounts);
       StorageService.updateTeacherLastActive(match.id);
 
-      // Restore teacher's original created classroom from Firebase / Cloud
+      // Restore teacher's permanently associated classroom from Firebase UID / Cloud
+      setLoadingText('Restoring your classroom and records...');
       const restored = await CloudSync.restoreTeacherClassroom(
         effectiveUid,
         match.email || match.gmail || cleanQuery,
@@ -855,12 +710,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
       };
       StorageService.saveTeacherInfo(updatedTeacher);
 
-      const activeClassId = restored?.activeClassId || StorageService.getActiveClassId(effectiveUid, match.email, match);
+      const activeClassId = restored?.activeClassId || StorageService.getActiveClassId(effectiveUid, match.email);
       if (activeClassId) {
         StorageService.setActiveClassId(activeClassId);
       }
 
-      if (match.academicYear && activeClassId) {
+      if (match.academicYear) {
         const currentClass = StorageService.getClassInfo(activeClassId);
         StorageService.saveClassInfo({
           ...currentClass,
@@ -914,15 +769,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
           accessMethod: 'Teacher Login',
           role: 'teacher',
           success: true,
-          details: `Teacher logged in successfully via Teacher Login: ${match.email || match.name}`
+          details: `Teacher logged in successfully: ${match.name}`
         }).catch(() => {});
       }
 
-      setSuccessMsg(`Welcome, ${match.name}! Signed in successfully.`);
+      setSuccessMsg(`Welcome back, ${match.name}! Accessing your classroom portal...`);
       onLoginSuccess(match);
     } catch (err: any) {
       console.warn('Teacher login error:', err);
-      setErrorMsg(err?.message || 'Failed to sign in. Please check your credentials.');
+      setErrorMsg('Login failed. Please verify your credentials and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -955,79 +810,155 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
 
     try {
       const PRE_AUTHORIZED_EMAILS = new Set([
+        'lincythomas1911@gmail.com',
         'gelwin72@gmail.com',
         'joicegeorge1910@gmail.com'
       ]);
 
-      if (!PRE_AUTHORIZED_EMAILS.has(cleanGmail)) {
-        setErrorMsg('Access Denied: Only authorized school admin Gmail addresses (joicegeorge1910@gmail.com or gelwin72@gmail.com) can access the School Admin Panel.');
-        setIsLoading(false);
-        return;
-      }
+      const isKnownAdmin = PRE_AUTHORIZED_EMAILS.has(cleanGmail);
 
-      if (cleanSchoolCode !== 'SSHSS@111213') {
-        setErrorMsg('Invalid School Code. Must be SSHSS@111213.');
-        setIsLoading(false);
-        return;
-      }
+      // Fast-path: Pre-authorized school admin for SSHSS@111213
+      if (isKnownAdmin && cleanSchoolCode === 'SSHSS@111213') {
+        let authUid = 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
 
-      // Check specific passwords
-      if (cleanGmail === 'joicegeorge1910@gmail.com' && adminPassword !== 'joice1910') {
-        setErrorMsg('Incorrect password for joicegeorge1910@gmail.com. Please enter the correct password.');
-        setIsLoading(false);
-        return;
-      }
-      if (cleanGmail === 'gelwin72@gmail.com' && adminPassword !== 'elwin1234') {
-        setErrorMsg('Incorrect password for gelwin72@gmail.com. Please enter the correct password.');
-        setIsLoading(false);
-        return;
-      }
-
-      let authUid = 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
-
-      // Quick Firebase Auth check in background or rapid race (1500ms max)
-      try {
-        const authTask = signInWithEmailAndPassword(auth, cleanGmail, adminPassword)
-          .then(res => res.user?.uid || null)
-          .catch(async (authErr: any) => {
-            if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential' || authErr?.code === 'auth/wrong-password') {
-              const created = await createUserWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
-              if (!created) {
-                const retryLogin = await signInWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
-                return retryLogin?.user?.uid || null;
+        // Quick Firebase Auth check in background or rapid race (1000ms max)
+        try {
+          const authTask = signInWithEmailAndPassword(auth, cleanGmail, adminPassword)
+            .then(res => res.user?.uid || null)
+            .catch(async (authErr: any) => {
+              if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential') {
+                const created = await createUserWithEmailAndPassword(auth, cleanGmail, adminPassword).catch(() => null);
+                return created?.user?.uid || null;
               }
-              return created?.user?.uid || null;
-            }
-            return null;
-          });
+              return null;
+            });
 
-        const timeoutPromise = new Promise<null>(res => setTimeout(() => res(null), 1500));
-        const fastUid = await Promise.race([authTask, timeoutPromise]);
-        if (fastUid) authUid = fastUid;
-      } catch {}
+          const timeoutPromise = new Promise<null>(res => setTimeout(() => res(null), 1000));
+          const fastUid = await Promise.race([authTask, timeoutPromise]);
+          if (fastUid) authUid = fastUid;
+        } catch {}
 
-      const adminNameDetermined = adminDesignation || (
-        cleanGmail.includes('gelwin') ? 'Gelwin' : 'Joice George'
+        const adminNameDetermined = adminDesignation || (
+          cleanGmail.includes('lincy') ? 'Lincy Thomas' :
+          cleanGmail.includes('gelwin') ? 'Gelwin' :
+          cleanGmail.includes('joice') ? 'Joice George' : 'School Administrator'
+        );
+
+        const adminAccount: SchoolAdminAccount = {
+          id: authUid,
+          adminName: adminNameDetermined,
+          schoolName: StorageService.getSchoolProfile().schoolName || "St. Sebastian's Higher Secondary School",
+          schoolCode: cleanSchoolCode,
+          email: cleanGmail,
+          phone: '',
+          designation: adminDesignation || 'Head of School',
+          role: 'admin',
+          createdAt: new Date().toISOString()
+        };
+
+        // Instant local persistence
+        const currentSchool = StorageService.getSchoolProfile();
+        StorageService.saveSchoolProfile({
+          ...currentSchool,
+          schoolCode: cleanSchoolCode,
+          schoolName: adminAccount.schoolName,
+          principalName: adminAccount.adminName,
+          schoolEmail: cleanGmail
+        });
+
+        StorageService.setAuthSession({
+          isLoggedIn: true,
+          role: 'admin',
+          currentTeacher: null,
+          currentAdmin: adminAccount
+        });
+
+        // Record entered Gmail in Realtime Database under 'gmail' (no passwords)
+        if (cleanGmail) {
+          CloudSync.recordGmailEntry(cleanGmail, {
+            role: 'admin',
+            name: adminAccount.adminName,
+            schoolCode: cleanSchoolCode,
+            loginMethod: 'email'
+          }).catch(() => {});
+        }
+
+        // Non-blocking background sync & real-time sync activation
+        CloudSync.setActiveSyncEmail(cleanGmail);
+        if (auth?.currentUser) {
+          CloudSync.startRealtimeSync(auth.currentUser);
+        }
+        CloudSync.verifyAndSyncSchoolAdmin(authUid, cleanGmail, cleanSchoolCode, adminDesignation).catch(() => {});
+        CloudSync.recordLoginActivity(cleanSchoolCode, {
+          email: cleanGmail,
+          accessMethod: 'School Admin Panel',
+          role: 'admin',
+          success: true,
+          details: `Authorized School Admin logged in: ${cleanGmail}`
+        }).catch(() => {});
+
+        setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted to School Admin Panel.`);
+        if (onAdminLoginSuccess) {
+          onAdminLoginSuccess(adminAccount);
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // Standard path for other admin accounts
+      let authResult: any = null;
+      try {
+        authResult = await Promise.race([
+          signInWithEmailAndPassword(auth, cleanGmail, adminPassword),
+          new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500))
+        ]);
+      } catch (authErr: any) {
+        const code = authErr?.code || '';
+        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+          setErrorMsg('Invalid School Admin credentials. Please verify your Gmail and Password.');
+          setIsLoading(false);
+          return;
+        } else if (code === 'auth/user-not-found') {
+          setErrorMsg('No School Admin account found with this Gmail.');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const authUser = authResult?.user || auth?.currentUser;
+      const uid = authUser?.uid || 'admin-' + cleanGmail.replace(/[^a-zA-Z0-9]/g, '_');
+
+      const verifyRes = await CloudSync.verifyAndSyncSchoolAdmin(
+        uid,
+        cleanGmail,
+        cleanSchoolCode,
+        adminDesignation
       );
 
+      if (!verifyRes.authorized) {
+        if (auth?.currentUser) await signOut(auth).catch(() => {});
+        setErrorMsg(verifyRes.reason || 'Access Denied\n\nThis Gmail account is not authorized to access this School Admin Panel.');
+        setIsLoading(false);
+        return;
+      }
+
       const adminAccount: SchoolAdminAccount = {
-        id: authUid,
-        adminName: adminNameDetermined,
-        schoolName: "St. Sebastian's Higher Secondary School Koodaranhi",
+        id: uid,
+        adminName: verifyRes.adminRecord?.adminName || adminDesignation || 'School Administrator',
+        schoolName: verifyRes.adminRecord?.schoolName || "St. Sebastian's Higher Secondary School",
         schoolCode: cleanSchoolCode,
         email: cleanGmail,
         phone: '',
         designation: adminDesignation || 'Head of School',
         role: 'admin',
-        createdAt: new Date().toISOString()
+        createdAt: verifyRes.adminRecord?.createdAt || new Date().toISOString()
       };
 
-      // Instant local persistence
       const currentSchool = StorageService.getSchoolProfile();
       StorageService.saveSchoolProfile({
         ...currentSchool,
         schoolCode: cleanSchoolCode,
-        schoolName: "St. Sebastian's Higher Secondary School Koodaranhi",
+        schoolName: adminAccount.schoolName,
         principalName: adminAccount.adminName,
         schoolEmail: cleanGmail
       });
@@ -1049,27 +980,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         }).catch(() => {});
       }
 
-      // Non-blocking background sync & real-time sync activation
       CloudSync.setActiveSyncEmail(cleanGmail);
-      if (auth?.currentUser) {
-        CloudSync.startRealtimeSync(auth.currentUser);
-      }
-      CloudSync.verifyAndSyncSchoolAdmin(authUid, cleanGmail, cleanSchoolCode, adminDesignation).catch(() => {});
-      CloudSync.recordLoginActivity(cleanSchoolCode, {
-        email: cleanGmail,
-        accessMethod: 'School Admin Panel',
-        role: 'admin',
-        success: true,
-        details: `Authorized School Admin logged in: ${cleanGmail}`
-      }).catch(() => {});
+      if (authUser) CloudSync.startRealtimeSync(authUser);
 
-      setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted to School Admin Panel.`);
+      setSuccessMsg(`Welcome, ${adminAccount.adminName}! Access granted.`);
       if (onAdminLoginSuccess) {
         onAdminLoginSuccess(adminAccount);
       }
       setIsLoading(false);
-      return;
-
     } catch (err: any) {
       console.error('School Admin authorization error:', err);
       setErrorMsg('Authentication and authorization failed. Please check your credentials.');
@@ -1098,29 +1016,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onAdminL
         throw new Error('Firebase Authentication is not initialized.');
       }
 
-      let backendDispatched = false;
-      try {
-        const resp = await fetch('/api/send-password-reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail })
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.success) {
-            backendDispatched = true;
-          }
-        }
-      } catch {
-        // Fall back seamlessly to client-side Firebase Auth
-      }
-
-      if (!backendDispatched) {
-        // Send password reset email directly through Firebase Authentication
-        // This sends an encrypted one-time reset link directly to the user's inbox
-        // without storing, exposing, or modifying passwords in the database.
-        await sendPasswordResetEmail(auth, cleanEmail);
-      }
+      // Send password reset email directly through Firebase Authentication
+      // This sends an encrypted one-time reset link directly to the user's inbox
+      // without storing, exposing, or modifying passwords in the database.
+      await sendPasswordResetEmail(auth, cleanEmail);
 
       setSuccessMsg(
         `A secure password reset link has been dispatched to ${cleanEmail}. Please check your inbox (and spam/junk folder) and click the link to choose your new password. Once updated, you can return here to log in.`

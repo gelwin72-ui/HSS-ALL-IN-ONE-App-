@@ -24,13 +24,12 @@ import { ReminderModal } from './components/ReminderModal';
 import { AddClassModal } from './components/AddClassModal';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { InstallPromptBanner } from './components/InstallPromptBanner';
-import { AutoSaveIndicator } from './components/AutoSaveIndicator';
 
 import { auth, onAuthStateChanged, signOut } from './utils/firebase';
 import { CloudSync } from './utils/cloudSync';
 import { ThemeManager } from './utils/themeHelper';
-import { requestAndSaveFCMToken, removeFCMToken, sendSchoolNotification, autoInitializeNotificationsOnBoot } from './utils/fcm';
-import { setOneSignalUser, logoutOneSignalUser, initOneSignal } from './utils/onesignal';
+import { requestAndSaveFCMToken, removeFCMToken } from './utils/fcm';
+import { setOneSignalUser, logoutOneSignalUser } from './utils/onesignal';
 
 // Screens
 import { AuthScreen } from './screens/AuthScreen';
@@ -97,78 +96,27 @@ export function App() {
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
   const showToast = (message: string, type: ToastType = 'info') => {
-    const updateToast = () => setToast({ message, type });
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(updateToast);
-    } else {
-      setTimeout(updateToast, 0);
-    }
+    setToast({ message, type });
   };
 
   // Reload all data from storage (used after switching class, restore/reset or auth)
   const refreshAllState = (specificClassId?: string) => {
-    const applyRefresh = () => {
-      const cid = specificClassId || StorageService.getActiveClassId();
-      setActiveClassId(cid);
-      setClassesList(StorageService.getClassesList());
-      setSchool(StorageService.getSchoolProfile());
-      setClassInfo(StorageService.getClassInfo(cid));
-      setTeacher(StorageService.getTeacherInfo());
-      setStudents(StorageService.getStudents(cid));
-      setAttendance(StorageService.getAttendance(cid));
-      setExams(StorageService.getExams(cid));
-      setExamMarksMap(StorageService.getExamMarksMap(cid));
-      setReminders(StorageService.getReminders());
-    };
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(applyRefresh);
-    } else {
-      setTimeout(applyRefresh, 0);
-    }
+    const cid = specificClassId || StorageService.getActiveClassId();
+    setActiveClassId(cid);
+    setClassesList(StorageService.getClassesList());
+    setSchool(StorageService.getSchoolProfile());
+    setClassInfo(StorageService.getClassInfo(cid));
+    setTeacher(StorageService.getTeacherInfo());
+    setStudents(StorageService.getStudents(cid));
+    setAttendance(StorageService.getAttendance(cid));
+    setExams(StorageService.getExams(cid));
+    setExamMarksMap(StorageService.getExamMarksMap(cid));
+    setReminders(StorageService.getReminders());
   };
 
-  // Listen for foreground FCM push events and display instant in-app toasts
-  useEffect(() => {
-    const handleForegroundPush = (e: any) => {
-      const detail = e.detail;
-      if (detail && detail.title) {
-        showToast(`${detail.title}: ${detail.body || ''}`, 'info');
-      }
-    };
-    window.addEventListener('hss-fcm-foreground-message', handleForegroundPush);
-    return () => {
-      window.removeEventListener('hss-fcm-foreground-message', handleForegroundPush);
-    };
-  }, []);
-
-  // Listen for instant multi-device data synthesis events
-  useEffect(() => {
-    const handleSynthesized = (e: any) => {
-      const activeClass = StorageService.getActiveClassId();
-      refreshAllState(activeClass);
-      const report = e.detail?.report;
-      if (report && (report.studentsSynthesized > 0 || report.attendanceSynthesized > 0 || report.examsSynthesized > 0)) {
-        showToast('⚡ Instant Data Synthesis: Merged latest cloud updates seamlessly across devices', 'success');
-      }
-    };
-    window.addEventListener('hss:cloud-sync-synthesized', handleSynthesized);
-    return () => {
-      window.removeEventListener('hss:cloud-sync-synthesized', handleSynthesized);
-    };
-  }, []);
-
-  // Initialize Theme, Push Notifications, and listen to Auth & Email state
+  // Initialize Theme and listen to Auth & Email state for automatic seamless cross-device cloud sync
   useEffect(() => {
     ThemeManager.initTheme();
-
-    // Auto initialize push notification services if permission is granted
-    const sessionForPush = StorageService.getAuthSession();
-    const uidForPush = sessionForPush.currentTeacher?.id || sessionForPush.currentAdmin?.id || 'user';
-    const schoolCodeForPush = sessionForPush.currentTeacher?.schoolCode || sessionForPush.currentAdmin?.schoolCode || StorageService.getSchoolProfile().schoolCode || 'SSHSS@111213';
-    const roleForPush = sessionForPush.role || 'teacher';
-
-    autoInitializeNotificationsOnBoot(uidForPush, schoolCodeForPush, roleForPush).catch(() => {});
-    initOneSignal().catch(() => {});
 
     // Check if there is an active sync email in localStorage or current teacher/admin session
     const currentSession = StorageService.getAuthSession();
@@ -272,7 +220,7 @@ export function App() {
     setAuthRole('teacher');
     setCurrentAdmin(null);
     setIsAuthenticated(true);
-    const schoolCode = account.schoolCode || StorageService.getSchoolProfile().schoolCode || 'SSHSS@111213';
+    const schoolCode = account.schoolCode || StorageService.getSchoolProfile().schoolCode;
     requestAndSaveFCMToken(uid, schoolCode).catch(() => {});
     setOneSignalUser({
       userId: uid,
@@ -285,20 +233,7 @@ export function App() {
       assignedClass: account.assignedClass,
       subject: account.subject || account.primarySubject
     }).catch(() => {});
-
-    // Save teacher profile to school admin roster immediately & sync cloud state
-    CloudSync.saveTeacherToSchool(schoolCode, account).catch(() => {});
     CloudSync.syncAllTeacherClassesToSchool(schoolCode, uid, account.email || account.gmail).catch(() => {});
-    CloudSync.recordTeacherActivity(schoolCode, {
-      teacherId: uid,
-      teacherName: account.name,
-      subject: account.subject || account.primarySubject,
-      assignedClass: account.assignedClass,
-      activityType: 'login',
-      description: `Teacher ${account.name} entered app (School: ${schoolCode})`
-    }).catch(() => {});
-    CloudSync.scheduleAutoSync(true);
-
     showToast(`Welcome, ${account.name}! Multi-device sync active.`, 'success');
   };
 
@@ -710,7 +645,6 @@ export function App() {
   const handleSaveAttendance = (record: AttendanceRecord) => {
     StorageService.saveDailyAttendance(record, activeClassId);
     setAttendance(StorageService.getAttendance(activeClassId));
-    CloudSync.scheduleAutoSync(true);
 
     const session = StorageService.getAuthSession();
     const currentTeacher = session.currentTeacher;
@@ -731,7 +665,6 @@ export function App() {
     const updated = attendance.filter(a => a.id !== recordId);
     StorageService.saveAttendance(updated, activeClassId);
     setAttendance(updated);
-    CloudSync.scheduleAutoSync(true);
     showToast('Attendance record deleted.', 'info');
   };
 
@@ -747,7 +680,6 @@ export function App() {
     }
     StorageService.saveExams(updated, activeClassId);
     setExams(updated);
-    CloudSync.scheduleAutoSync(true);
 
     const session = StorageService.getAuthSession();
     const currentTeacher = session.currentTeacher;
@@ -762,15 +694,6 @@ export function App() {
       description: `Saved examination schedule/details for "${exam.name}" (Max: ${totalMaxMarks}).`
     }).catch(() => {});
 
-    // Dispatch real-time exam notification via FCM
-    sendSchoolNotification({
-      schoolCode,
-      title: `📝 Exam Schedule: ${exam.name}`,
-      body: `Examination schedule and syllabus published for Class ${classInfo.className}.`,
-      category: 'exams',
-      targetAudience: 'Teachers'
-    }).catch(() => {});
-
     showToast(`Exam "${exam.name}" saved!`, 'success');
   };
 
@@ -778,14 +701,12 @@ export function App() {
     const updated = exams.filter(e => e.id !== examId);
     StorageService.saveExams(updated, activeClassId);
     setExams(updated);
-    CloudSync.scheduleAutoSync(true);
     showToast('Exam deleted.', 'info');
   };
 
   const handleSaveMarksRecord = (examId: string, marksRecord: ExamMarksRecord) => {
     StorageService.saveExamMarks(examId, marksRecord, activeClassId);
     setExamMarksMap(StorageService.getExamMarksMap(activeClassId));
-    CloudSync.scheduleAutoSync(true);
 
     const session = StorageService.getAuthSession();
     const currentTeacher = session.currentTeacher;
@@ -925,7 +846,7 @@ export function App() {
         schoolName={school.schoolName || "St.Sebastian's Higher Secondary School"}
         schoolCode={school.schoolCode}
         principalName={currentAdmin?.designation || school.designation || school.principalName || 'Principal'}
-        classNameStr={classInfo.className || classesList.find(c => c.id === activeClassId)?.className || StorageService.getAuthSession().currentTeacher?.assignedClass || (classesList.length > 0 ? classesList[0].className : 'Classroom')}
+        classNameStr={classInfo.className || 'Class 12 Science A'}
         classesList={classesList}
         activeClassId={activeClassId}
         teacher={teacher}
@@ -1144,9 +1065,6 @@ export function App() {
 
       {/* 9. In-App PWA Install Prompt Banner */}
       <InstallPromptBanner />
-
-      {/* Real-Time Cloud Auto-Save Status Indicator */}
-      <AutoSaveIndicator />
 
       {/* 10. Toast Message Popups */}
       {toast && (

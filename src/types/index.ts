@@ -26,9 +26,7 @@ export interface TeacherAccount {
   photoUrl?: string;
   dob?: string; // YYYY-MM-DD
   createdAt: string;
-  registeredAt?: string;
   lastActiveAt?: string;
-  lastLoginAt?: string;
   recentActivity?: string;
   studentCount?: number;
   attendanceCount?: number;
@@ -304,27 +302,5 @@ export interface AuditLogItem {
   target?: string;
   details?: string;
   status: 'SUCCESS' | 'DENIED' | 'INFO' | 'WARNING' | 'ERROR';
-}
-
-export interface SynthesisReport {
-  studentsSynthesized: number;
-  attendanceSynthesized: number;
-  examsSynthesized: number;
-  examMarksSynthesized: number;
-  classesSynthesized: number;
-  timetablesSynthesized: number;
-  remindersSynthesized: number;
-  timestamp: string;
-  sourceDeviceId?: string;
-}
-
-export interface ConnectedDevice {
-  deviceId: string;
-  name: string;
-  platform: 'Android APK' | 'Web Browser' | 'PWA Mobile';
-  isCurrentDevice: boolean;
-  lastActiveAt: string;
-  userAgent?: string;
-  appVersion?: string;
 }
 

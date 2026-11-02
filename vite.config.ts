@@ -6,7 +6,7 @@ import {defineConfig} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
-  const basePath = process.env.VITE_BASE_PATH || './';
+  const basePath = process.env.VITE_BASE_PATH || (process.env.GITHUB_ACTIONS === 'true' || process.env.GITHUB_REPOSITORY ? '/HSS-ALL-IN-ONE/' : '/');
   return {
     base: basePath,
     plugins: [
@@ -152,20 +152,16 @@ export default defineConfig(() => {
           ]
         }
       }),
-      // Ensure SPA fallback works for deep links, subpaths, and refreshes on GitHub Pages
+      // Ensure SPA fallback works for deep links and refreshes
       {
         name: 'spa-fallback-plugin',
         closeBundle() {
           const distDir = path.resolve(__dirname, 'dist');
           const distIndex = path.resolve(distDir, 'index.html');
           const dist404 = path.resolve(distDir, '404.html');
-          const distNoJekyll = path.resolve(distDir, '.nojekyll');
           if (fs.existsSync(distIndex)) {
             fs.copyFileSync(distIndex, dist404);
           }
-          try {
-            fs.writeFileSync(distNoJekyll, '');
-          } catch (e) {}
         },
       },
     ],
