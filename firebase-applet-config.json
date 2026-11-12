@@ -3,10 +3,10 @@
   "appId": "1:799562003325:web:a0d95eb156436f6e589214",
   "apiKey": "AIzaSyBpavTOU1cD1KIQtQpS8tU3eKv4Dn-soEs",
   "authDomain": "hss-all-in-one-app.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-hssallinone-118fd682-5b2b-4225-b897-922c9c6c2fa8",
   "storageBucket": "hss-all-in-one-app.firebasestorage.app",
   "messagingSenderId": "799562003325",
   "measurementId": "G-3LL9ZN4515",
-  "oAuthClientId": "",
+  "oAuthClientId": "799562003325-epglimgdjp49abnbajemnup4h4fdiq2i.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
